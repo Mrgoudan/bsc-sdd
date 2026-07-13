@@ -102,3 +102,35 @@ CREATE TABLE IF NOT EXISTS contract_fulfills (
     req_key       TEXT NOT NULL,
     PRIMARY KEY (contract_id, req_key)
 );
+
+-- Incremental within-module codegen. A module is generated as: a frozen
+-- skeleton (the .hbs interface + the .cbs preamble) produced ONCE, then one
+-- function body at a time, compiling after each. This avoids the whole-file
+-- timeout and lets a compile error localize to (and regenerate) a single
+-- function instead of the whole module.
+--   codegen_modules: the frozen skeleton for a module.
+CREATE TABLE IF NOT EXISTS codegen_modules (
+    feature_key   TEXT NOT NULL,
+    module        TEXT NOT NULL,
+    hbs_path      TEXT NOT NULL,                   -- worktree-relative .hbs path
+    cbs_path      TEXT NOT NULL,                   -- worktree-relative .cbs path
+    hbs           TEXT NOT NULL,                   -- the interface (struct + all decls)
+    cbs_head      TEXT NOT NULL,                   -- .cbs preamble (includes + private helpers)
+    PRIMARY KEY (feature_key, module)
+);
+
+-- codegen_units: one row per function; `body` accumulates as it's generated.
+-- The .cbs is rebuilt from cbs_head + every non-null body (ordered by seq), so
+-- regenerating one function REPLACES its body rather than appending a duplicate.
+--   status: pending -> active (being generated) -> done (compiled green)
+CREATE TABLE IF NOT EXISTS codegen_units (
+    id            INTEGER PRIMARY KEY,
+    feature_key   TEXT NOT NULL,
+    module        TEXT NOT NULL,
+    contract_key  TEXT NOT NULL,
+    seq           INTEGER NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'pending', -- pending | active | done
+    attempts      INTEGER NOT NULL DEFAULT 0,      -- per-function regenerate count
+    body          TEXT,
+    UNIQUE (feature_key, module, contract_key)
+);

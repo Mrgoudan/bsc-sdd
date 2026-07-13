@@ -12,53 +12,103 @@ consumes: [spec.validated]
 emits: [sdd.completed, sdd.blocked]
 
 steps:
-  - name: plan                       # fan-out units: one codegen unit per
-    block: codegen.plan              # contract (payload optimization — each
-    timeout_s: 30                    # unit carries only its slice of the spec).
+  - name: plan                       # units = modules (functions in a module
+    block: codegen.plan              # share the struct/helpers -> generated
+    timeout_s: 30                    # together). Single module = one loop below.
     outcomes: { ok: workspace, empty: done }
 
   - name: workspace
     block: worktree.create
     timeout_s: 120
     params: { repo: "{paths.repo}", base: "{payload.base}" }
-    outcomes: { ok: codegen, dirty: failed, timeout: failed }
+    outcomes: { ok: skeleton, dirty: failed, timeout: failed }
 
-  - name: codegen                    # spec slice -> BiSheng C. The signature's
-    block: agent.run                 # ownership shape is the design decision;
-    llm: codegen                     # the compiler will hold it accountable.
-    schema: codegen_result
+  - name: skeleton                   # the module interface, ONCE: .hbs (struct +
+    block: agent.run                 # EVERY declaration) + .cbs preamble. Frozen,
+    llm: skeleton                    # so per-function codegen stays consistent.
+    schema: skeleton_result
     params: { max_context_bytes: "{pack.max_context_bytes}" }
     timeout_s: 1800
     context:
       - payload
-      - spec_slice                   # ONLY this unit's contracts (not whole spec)
-      - contracts                    # callee signatures it must call correctly
+      - spec_slice                   # all the module's contracts (signatures)
     outcomes:
-      CODE: emit_code
+      SKELETON: skel_write
       EMPTY: blocked
       agent_limit: parked
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
 
-  - name: emit_code                  # write the agent's .cbs into the worktree
-    block: codegen.write
+  - name: skel_write                 # persist skeleton + write .hbs / .cbs-head
+    block: codegen.skel_write
     timeout_s: 30
-    params: { repo: "{paths.repo}" }
-    outcomes: { ok: compile, empty: failed }
+    outcomes: { ok: seed_units, empty: blocked }
 
-  - name: compile                    # THE SOUND GATE: BSC syntax + ownership +
-    block: verify.compile            # nullability + init, in-function and at
-    lane: build                      # every call site. Green => safety design
-    timeout_s: 3600                  # + joins proven. Red => a real defect.
+  - name: seed_units                 # one pending unit per function
+    block: codegen.seed_units
+    timeout_s: 30
+    outcomes: { ok: next_fn, empty: blocked }
+
+  # --- the per-function loop: gen one function, compile it, next (or regenerate) ---
+  - name: next_fn                    # cursor: next pending function -> active,
+    block: codegen.next_fn           # or 'done' once every function is green.
+    max_visits: 400                  # visited ~once per function (+ loop-backs)
+    timeout_s: 30
+    outcomes: { next: gen_fn, done: test }
+
+  - name: gen_fn                     # ONE function body against the frozen
+    block: agent.run                 # skeleton — small context (no whole-file
+    llm: genfn                       # timeout); a red localizes to this function.
+    schema: function_result
+    max_visits: 400
+    params: { max_context_bytes: "{pack.max_context_bytes}" }
+    timeout_s: 1800
+    context:
+      - payload
+      - skeleton                     # the frozen .hbs interface to code against
+      - active_contract              # this ONE function: signature + assertions
+      - compile_feedback             # on a retry: the compiler's errors to fix
+    outcomes:
+      FUNCTION: write_fn
+      EMPTY: blocked
+      agent_limit: parked
+      agent_backend: parked
+      agent_invalid: parked
+      timeout: parked
+
+  - name: write_fn                   # store the body; rebuild .cbs from all bodies
+    block: codegen.write_fn          # (a regenerate REPLACES, never appends)
+    max_visits: 400
+    timeout_s: 30
+    outcomes: { ok: compile, empty: blocked }
+
+  - name: compile                    # THE SOUND GATE, per function: BSC ownership
+    block: verify.compile            # + null + init against the frozen interface.
+    lane: build                      # green => this function is sound; red => a
+    max_visits: 400                  # real defect localized to this function.
+    timeout_s: 600
     params:
       cmd: "{pack.compile_cmd}"
       repo: "{paths.repo}"
     outcomes:
-      green: test
-      red: blocked                   # (later: route to a regenerate/fix loop)
+      green: mark_done
+      red: retry_gate                # per-function-capped regenerate
       error: blocked
       timeout: parked
+
+  - name: retry_gate                 # bump this function's attempt count; regenerate
+    block: codegen.retry_gate        # ('retry') or give up ('giveup') past `cap`.
+    max_visits: 400
+    params: { cap: 3 }
+    timeout_s: 10
+    outcomes: { retry: gen_fn, giveup: blocked }
+
+  - name: mark_done                  # this function is green -> advance the cursor
+    block: codegen.mark_done
+    max_visits: 400
+    timeout_s: 30
+    outcomes: { ok: next_fn }
 
   - name: test                       # business floor: run the target's tests
     block: verify.test

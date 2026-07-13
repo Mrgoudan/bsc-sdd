@@ -54,34 +54,63 @@ handoff implications — not a foundation.
   compiler/test/z3 and `sound=0` for the LLM residual, so the evidence trail
   shows exactly what was proven vs argued.
 
+## Requirement traceability
+
+On top of the sound core sits a requirement-conformance envelope, threaded by IDs:
+
+```
+requirement (prose) --decompose--> R-* atomic items
+R-* --author's `fulfills`--> contracts        (the trace)
+coverage gate: every in-scope R fulfilled by >=1 contract   (deterministic)
+impl --conformance--> each R checked against its mapped code (LLM, sound=0)
+```
+
+`out_of_scope` items are exclusions — excluded from coverage. The gate is
+deterministic; the conformance verdict is the honest LLM layer over the sound
+compiler/test floor.
+
 ## Pipeline (`workflows/`)
 
-- **`spec_author`** — `spec.requested` → author the IR → `spec.load` →
-  `spec.validate` (deterministic structural checks, *not* a proof) →
-  emits `spec.validated`.
-- **`sdd_build`** — `spec.validated` → `codegen.plan` → worktree → `codegen`
-  → `codegen.write` → **`verify.compile`** (sound gate) → `verify.test`
-  → `business` (LLM residual) → emits `sdd.completed` / `sdd.blocked`.
+- **`spec_author`** — `spec.requested` → **`decompose`** (prose → `R-*`) →
+  `reqs.load` → author the IR (with `fulfills`) → `spec.load` →
+  `spec.validate` (structural checks **+ coverage gate**, deterministic, *not* a
+  proof) → emits `spec.validated`.
+- **`sdd_build`** — `spec.validated` → `codegen.plan` (units = modules) →
+  worktree → `codegen` → `codegen.write` → **`verify.compile`** (sound gate;
+  `red` → back to `codegen` with the errors, capped) → `verify.test` →
+  `business` (LLM residual) → `conformance` (impl→req) → emits
+  `sdd.completed` / `sdd.blocked`.
 
 ---
 
-## Status: skeleton
+## Status
 
-Loadable shape with real deterministic logic (spec load/validate, compile/test
-gates, providers). Clearly-marked stubs remain:
+Real logic throughout: decompose, coverage gate, spec load/validate, the
+compile/test gates, the regenerate-on-red loop (`max_visits`-capped, errors fed
+back via `compile_feedback`), module-grouped codegen, and the providers/recorder
+for impl→req. The codegen unit is a **module** (functions in one module share
+types and must be generated together).
 
-- `codegen.plan` enumerates units but does not yet fan out per-unit in parallel
-  (a group/`_join` — the payload-optimization win).
-- `verify.compile` on `red` dead-ends at `sdd.blocked`; the regenerate/fix loop
-  is TODO.
-- Worktree-path threading into `codegen.write` is best-effort.
-- No forge egress yet (PR open).
-- The Z3 backend for `formal` assertions is a later swap; today it's LLM-only.
+**Intentional "later" (design decisions, not stubs):**
+
+- **Z3 backend for `formal` assertions** — LLM checks the `text` today; a solver
+  reads the `formal` slot later. This is the deliberate "do what works now, port
+  to a real solver later" call. The slot is populated and ready; nothing to
+  re-author when Z3 lands.
+- **Multi-module parallel fan-out** — the unit is the module and single-module
+  features run as one codegen (correct). Parallelizing *across* modules uses
+  `fanout.emit` + join (mechanism identified); wire it when a feature spans
+  modules.
+- **Forge egress (open a PR)** — no forge target is configured for this pack
+  yet; `sdd.completed` is emitted, not pushed. Add a forge + `forge.open_pr`
+  step to publish.
 
 ## Run
 
 ```bash
 FORGEFLOW_SECRETS=~/.config/forgeflow/secrets.env \
   ./run-bsc-sdd.sh validate            # check the pack loads
-  ./run-bsc-sdd.sh emit spec.requested --data '{"feature_key":"FEATURE-001", ...}'
+  ./run-bsc-sdd.sh emit spec.requested --data '{"feature_key":"FEATURE-001","requirement":"..."}'
 ```
+
+See `examples/cjson/` for a worked requirement + its rendered spec.

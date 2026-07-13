@@ -55,14 +55,16 @@ schema:
 prompts:
   decompose: prompts/decompose.md  # requirement prose -> atomic ID'd requirements
   author:  prompts/author.md      # requirements -> spec IR (with fulfills trace)
-  codegen: prompts/codegen.md     # spec slice -> BiSheng C
+  skeleton: prompts/skeleton.md   # module interface (.hbs + .cbs head), once
+  genfn:   prompts/genfn.md       # ONE function body against the skeleton
   business: prompts/business.md   # LLM business-logic check over structured assertions
   conform: prompts/conformance.md # impl -> req conformance (the outer envelope)
 
 schemas:
   requirements_result: schemas/requirements_result.yaml
   spec_result:      schemas/spec_result.yaml
-  codegen_result:   schemas/codegen_result.yaml
+  skeleton_result:  schemas/skeleton_result.yaml
+  function_result:  schemas/function_result.yaml
   business_verdict: schemas/business_verdict.yaml
   conformance_result: schemas/conformance_result.yaml
 
@@ -72,7 +74,9 @@ agents:
                env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   author:   { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
-  codegen:  { backend: claude-cli, model: GLM-5.2,
+  skeleton: { backend: claude-cli, model: GLM-5.2,
+              env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
+  genfn:    { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   business: { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }

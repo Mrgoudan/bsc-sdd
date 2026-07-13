@@ -1,0 +1,11 @@
+# The skeleton agent's output: the frozen module interface, produced ONCE.
+# verdict enum values become routable outcomes; codegen.skel_write persists it.
+type: object
+required: [verdict]
+properties:
+  verdict: { enum: [SKELETON, EMPTY] }
+  hbs: { type: string }        # the .hbs: includes, type set, struct (named to
+                               # match the signatures), destructor, and EVERY
+                               # function's declaration
+  cbs_head: { type: string }   # the .cbs preamble: includes + any private helper
+                               # declarations the function bodies will share

@@ -1,0 +1,8 @@
+# The per-function codegen agent's output: ONE function definition.
+# verdict enum values become routable outcomes; codegen.write_fn stores the body
+# and rebuilds the .cbs.
+type: object
+required: [verdict]
+properties:
+  verdict: { enum: [FUNCTION, EMPTY] }
+  body: { type: string }       # the full definition of the one active function

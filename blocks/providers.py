@@ -9,11 +9,35 @@ prompt carries only what's relevant (payload optimization), not the whole spec.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from forgeflow.contract import context_provider
 
 
 def _feature_key(task):
     return (task.get("payload") or {}).get("feature_key")
+
+
+@context_provider("compile_feedback")
+def _compile_feedback(env, task, spec):
+    """On a regenerate-on-red retry: the errors from this task's LAST failed
+    compile, so codegen can fix them instead of guessing. None on the first
+    pass (no prior red) — the codegen prompt then ignores it."""
+    row = env.conn.execute(
+        "SELECT result FROM task_steps WHERE task_id=? AND step='compile'"
+        " AND outcome='red' ORDER BY at DESC LIMIT 1", (task.get("id"),)).fetchone()
+    if not row or not row[0]:
+        return None
+    try:
+        res = json.loads(row[0])
+    except (ValueError, TypeError):
+        return None
+    text = ""
+    sp = res.get("stderr_path")
+    if sp and Path(sp).exists():
+        text = Path(sp).read_text(errors="replace")[-4000:]
+    return {"file": res.get("file"), "errors": text or "(compile failed)"}
 
 
 @context_provider("requirements")
@@ -31,15 +55,21 @@ def _requirements(env, task, spec):
 
 @context_provider("spec_slice")
 def _spec_slice(env, task, spec):
-    """Contracts for this feature. TODO: narrow to the fanned-out unit once
-    codegen.plan emits per-unit tasks; today it returns the whole feature."""
+    """The contracts of the module being generated. A fanned-out unit carries
+    its `module` in the payload; without one (single-module feature) this is the
+    whole feature's contracts."""
     fk = _feature_key(task)
     if not fk:
         return []
-    rows = env.conn.execute(
-        "SELECT c.contract_key, c.module, c.signature, c.summary, c.impl_file"
-        " FROM contracts c JOIN specs s ON s.id = c.spec_id"
-        " WHERE s.feature_key=? AND c.status='active' ORDER BY c.id", (fk,)).fetchall()
+    mod = (task.get("payload") or {}).get("module")
+    q = ("SELECT c.contract_key, c.module, c.signature, c.summary, c.impl_file"
+         " FROM contracts c JOIN specs s ON s.id = c.spec_id"
+         " WHERE s.feature_key=? AND c.status='active'")
+    args = [fk]
+    if mod:
+        q += " AND c.module=?"
+        args.append(mod)
+    rows = env.conn.execute(q + " ORDER BY c.id", args).fetchall()
     return [{"contract_key": r["contract_key"], "module": r["module"],
              "signature": r["signature"], "summary": r["summary"],
              "impl_file": r["impl_file"]} for r in rows]
@@ -59,6 +89,40 @@ def _contracts(env, task, spec):
         " WHERE s.feature_key=? AND c.status='active' ORDER BY c.id", (fk,)).fetchall()
     return [{"contract_key": r["contract_key"], "signature": r["signature"]}
             for r in rows]
+
+
+@context_provider("skeleton")
+def _skeleton(env, task, spec):
+    """The frozen module interface (the .hbs) the per-function codegen codes
+    against — the struct, the type set, and every function's declaration."""
+    r = env.conn.execute("SELECT hbs FROM codegen_modules WHERE feature_key=? LIMIT 1",
+                         (_feature_key(task),)).fetchone()
+    return {"interface": r[0]} if r else {}
+
+
+@context_provider("active_contract")
+def _active_contract(env, task, spec):
+    """The ONE function currently being generated (codegen_units.status='active')
+    — its signature + business assertions. Keeps each gen call's context to a
+    single function, not the whole module."""
+    fk = _feature_key(task)
+    u = env.conn.execute("SELECT contract_key FROM codegen_units"
+                         " WHERE feature_key=? AND status='active' LIMIT 1", (fk,)).fetchone()
+    if not u:
+        return {}
+    ck = u[0]
+    c = env.conn.execute(
+        "SELECT c.signature, c.summary FROM contracts c JOIN specs s ON s.id = c.spec_id"
+        " WHERE s.feature_key=? AND c.contract_key=?", (fk, ck)).fetchone()
+    if not c:
+        return {}
+    asserts = [{"kind": r["kind"], "text": r["text"], "formal": r["formal"]}
+               for r in env.conn.execute(
+        "SELECT a.kind, a.text, a.formal FROM contract_assertions a"
+        " JOIN contracts c ON c.id = a.contract_id JOIN specs s ON s.id = c.spec_id"
+        " WHERE s.feature_key=? AND c.contract_key=? ORDER BY a.seq", (fk, ck))]
+    return {"contract_key": ck, "signature": c["signature"],
+            "summary": c["summary"], "assertions": asserts}
 
 
 @context_provider("req_trace")
