@@ -18,6 +18,11 @@ properties:
           required: [contract_key, signature]
           properties:
             contract_key: { type: string }
+            # the requirement id(s) this contract helps fulfill (the trace).
+            # every contract must cite >=1; the coverage gate enforces it.
+            fulfills:
+              type: array
+              items: { type: string }
             module:       { type: string }
             # BiSheng C signature WITH ownership annotations — this is the part
             # the compiler proves (_Owned / _Nonnull / &_Mut / &_Const / ...).

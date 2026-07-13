@@ -11,14 +11,36 @@ consumes: [spec.requested]
 emits: [spec.validated, spec.rejected]
 
 steps:
-  - name: author                     # requirement -> spec IR (the agent writes
-    block: agent.run                 # contracts w/ BSC ownership sigs + business
-    llm: author                      # assertions, filling `formal` when simple).
+  - name: decompose                  # prose requirement -> atomic, ID'd items,
+    block: agent.run                 # BEFORE the spec, so coverage is independent
+    llm: decompose
+    schema: requirements_result
+    params: { max_context_bytes: "{pack.max_context_bytes}" }
+    timeout_s: 1800
+    context:
+      - payload                      # the raw requirement text + feature key
+    outcomes:
+      REQS: persist_reqs
+      EMPTY: rejected
+      agent_limit: parked
+      agent_backend: parked
+      agent_invalid: parked
+      timeout: parked
+
+  - name: persist_reqs               # stage the R-* items by feature_key
+    block: reqs.load
+    timeout_s: 30
+    outcomes: { ok: author, empty: rejected }
+
+  - name: author                     # requirements -> spec IR (contracts w/ BSC
+    block: agent.run                 # ownership sigs, business assertions, and a
+    llm: author                      # `fulfills` trace to the R-* items).
     schema: spec_result
     params: { max_context_bytes: "{pack.max_context_bytes}" }
     timeout_s: 1800
     context:
       - payload                      # the requirement text + feature key
+      - requirements                 # the decomposed R-* items to cover + trace
     outcomes:
       SPEC: persist
       EMPTY: rejected

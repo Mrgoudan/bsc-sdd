@@ -1,0 +1,16 @@
+# The conformance agent's output: does the generated code fulfill each
+# requirement? Checked per requirement, scoped to the code of its fulfilling
+# contracts (the trace). verdict enum values become routable outcomes.
+type: object
+required: [verdict]
+properties:
+  verdict: { enum: [PASS, FAIL] }
+  results:
+    type: array
+    items:
+      type: object
+      required: [req_key, status]
+      properties:
+        req_key:  { type: string }
+        status:   { enum: [fulfilled, violated, cannot_determine] }
+        evidence: { type: string }   # line ref / counterexample / reasoning

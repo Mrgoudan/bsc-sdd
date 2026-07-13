@@ -16,6 +16,27 @@ def _get_spec(prev):
     return (prev or {}).get("spec") or {}
 
 
+@block("reqs.load", "state", {"ok", "empty"})
+def reqs_load(ctx, task, prev):
+    """Persist the decomposed requirements (from `decompose`) by feature_key,
+    BEFORE the spec is authored — so the coverage gate is an INDEPENDENT
+    completeness check, not the author grading its own decomposition."""
+    conn = ctx["_conn"]
+    fk = (task.get("payload") or {}).get("feature_key")
+    reqs = (prev or {}).get("requirements") or []
+    if not fk or not reqs:
+        return "empty", {}
+    conn.execute("DELETE FROM requirements WHERE feature_key=?", (fk,))
+    n = 0
+    for r in reqs:
+        if not r.get("req_key") or not r.get("text"):
+            continue
+        conn.execute("INSERT OR IGNORE INTO requirements(feature_key, req_key, text, kind)"
+                     " VALUES (?,?,?,?)", (fk, r["req_key"], r["text"], r.get("kind")))
+        n += 1
+    return "ok", {"feature_key": fk, "req_count": n}
+
+
 @block("spec.load", "state", {"ok", "empty"})
 def spec_load(ctx, task, prev):
     """Stage the IR into specs / contracts / contract_assertions / chains.
@@ -54,6 +75,9 @@ def spec_load(ctx, task, prev):
              c.get("summary"), c.get("impl_file")))
         cid = cc.lastrowid
         n_c += 1
+        for rk in (c.get("fulfills") or []):        # the req->spec trace
+            conn.execute("INSERT OR IGNORE INTO contract_fulfills(contract_id, req_key)"
+                         " VALUES (?,?)", (cid, rk))
         for i, a in enumerate(c.get("assertions") or []):
             if not a.get("kind") or not a.get("text"):
                 continue
@@ -76,14 +100,17 @@ def spec_load(ctx, task, prev):
                   "counts": {"contracts": n_c, "assertions": n_a, "steps": n_s}}
 
 
-@block("spec.validate", "local", {"ok", "invalid"})
+@block("spec.validate", "state", {"ok", "invalid"})
 def spec_validate(ctx, task, prev):
     """Deterministic MC-style checks over the IR. Pure structure, no LLM:
       - contract_keys unique
       - every chain step resolves to a declared contract
       - every contract has a signature AND an impl_file
       - encodable assertions actually carry a `formal` form
+      - COVERAGE: every decomposed requirement is fulfilled by >=1 contract, no
+        contract cites an unknown requirement, no contract is untraceable
     """
+    conn = ctx["_conn"]
     spec = _get_spec(prev)
     contracts = spec.get("contracts") or []
     keys = [c.get("contract_key") for c in contracts if c.get("contract_key")]
@@ -111,6 +138,35 @@ def spec_validate(ctx, task, prev):
                 errors.append("contract %s: assertion marked encodable but has"
                               " no `formal` form: %s" % (ck, a.get("text", "")[:60]))
 
+    # --- coverage: the req <-> spec trace (independent completeness gate) ---
+    # out_of_scope items are EXCLUSIONS — they must NOT be built, so they don't
+    # need a fulfilling contract (and a contract that fulfills one is a red flag).
+    fk = (task.get("payload") or {}).get("feature_key")
+    rows = conn.execute(
+        "SELECT req_key, kind FROM requirements WHERE feature_key=?", (fk,)).fetchall()
+    reqs = set(r[0] for r in rows)
+    must_cover = set(r[0] for r in rows if r[1] != "out_of_scope")
+    oos = reqs - must_cover
+    fulfilled = set()
+    if reqs:
+        for c in contracts:
+            ff = c.get("fulfills") or []
+            if not ff:
+                errors.append("contract %s fulfills no requirement (untraceable)"
+                              % c.get("contract_key", "?"))
+            for rk in ff:
+                if rk not in reqs:
+                    errors.append("contract %s cites unknown requirement %s"
+                                  % (c.get("contract_key", "?"), rk))
+                elif rk in oos:
+                    errors.append("contract %s fulfills out-of-scope requirement %s"
+                                  % (c.get("contract_key", "?"), rk))
+                else:
+                    fulfilled.add(rk)
+        for rk in sorted(must_cover - fulfilled):
+            errors.append("requirement %s is not fulfilled by any contract" % rk)
+
     if errors:
         return "invalid", {"errors": errors, "spec": spec}
-    return "ok", {"spec": spec, "checks_passed": True}
+    return "ok", {"spec": spec, "checks_passed": True,
+                  "coverage": {"requirements": len(reqs), "covered": len(fulfilled)}}

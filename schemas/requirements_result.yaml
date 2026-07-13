@@ -1,0 +1,15 @@
+# The decompose agent's output: the prose requirement split into atomic, ID'd
+# items. verdict enum values become routable outcomes; reqs.load persists them.
+type: object
+required: [verdict]
+properties:
+  verdict: { enum: [REQS, EMPTY] }
+  requirements:
+    type: array
+    items:
+      type: object
+      required: [req_key, text]
+      properties:
+        req_key: { type: string }   # stable id, e.g. R-1
+        text:    { type: string }   # ONE atomic, testable requirement
+        kind:    { enum: [behavior, success_signal, constraint, out_of_scope] }

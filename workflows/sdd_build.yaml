@@ -76,12 +76,34 @@ steps:
       - payload
       - assertions                   # this spec's business pre/post (text+formal)
     outcomes:
-      PASS: announce
+      PASS: conformance
       FAIL: blocked
       agent_limit: parked
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
+
+  - name: conformance                # impl -> req: does the code fulfill each
+    block: agent.run                 # atomic requirement? (the outer envelope,
+    llm: conform                     # scoped per-requirement by the trace)
+    schema: conformance_result
+    params: { max_context_bytes: "{pack.max_context_bytes}" }
+    timeout_s: 1800
+    context:
+      - payload
+      - req_trace                    # each requirement + its fulfilling contracts/code
+    outcomes:
+      PASS: record_req
+      FAIL: record_req               # record either way; the row carries the verdict
+      agent_limit: parked
+      agent_backend: parked
+      agent_invalid: parked
+      timeout: parked
+
+  - name: record_req                 # write the impl->req verdicts as verifications
+    block: verify.record_req         # (blocks if any requirement is violated)
+    timeout_s: 30
+    outcomes: { ok: announce, failed: blocked }
 
   - name: announce
     block: event.emit

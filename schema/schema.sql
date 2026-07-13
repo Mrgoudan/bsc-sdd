@@ -80,3 +80,25 @@ CREATE TABLE IF NOT EXISTS verifications (
     run_id        TEXT,
     at            TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Requirement decomposition: the prose requirement split into atomic, ID'd
+-- items. Produced by `decompose` BEFORE the spec, so the coverage gate is an
+-- INDEPENDENT completeness check (did the author's spec cover every R?).
+CREATE TABLE IF NOT EXISTS requirements (
+    id            INTEGER PRIMARY KEY,
+    feature_key   TEXT NOT NULL,                   -- ties to specs.feature_key
+    req_key       TEXT NOT NULL,                   -- stable id, e.g. R-1
+    text          TEXT NOT NULL,                   -- one atomic requirement
+    kind          TEXT,                            -- behavior | success_signal | constraint | out_of_scope
+    UNIQUE (feature_key, req_key)
+);
+
+-- The trace: which requirement(s) each contract helps fulfill. The coverage
+-- gate checks every requirement has >=1 fulfilling contract (nothing dropped)
+-- and every contract fulfills >=1 requirement (no gold-plating). req_key is
+-- validated against the requirements table at load time.
+CREATE TABLE IF NOT EXISTS contract_fulfills (
+    contract_id   INTEGER NOT NULL REFERENCES contracts(id),
+    req_key       TEXT NOT NULL,
+    PRIMARY KEY (contract_id, req_key)
+);

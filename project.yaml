@@ -19,6 +19,10 @@ paths:
   # codegen worktree + compile don't touch a dev tree). Everything else is
   # RELATIVE to this pack dir, resolved to absolute at load.
   repo:       ~/bsd/bsc-sdd-target
+  # the existing bisheng compiler that verifies generated code — the SOUND gate.
+  # a prebuilt clang (ENABLE_BSC); -fsyntax-only, no build needed. machine-specific.
+  bsc_clang:  ~/bsd/llvm-project-dup/build/bin/clang
+  libcbs:     ~/bsd/llvm-project-dup/libcbs/src/bishengc_safety
   data_root:  run                                # pack-local runtime cache (gitignored)
 
 tools:
@@ -49,32 +53,37 @@ schema:
   - schema/schema.sql
 
 prompts:
-  author:  prompts/author.md      # requirement -> spec IR
+  decompose: prompts/decompose.md  # requirement prose -> atomic ID'd requirements
+  author:  prompts/author.md      # requirements -> spec IR (with fulfills trace)
   codegen: prompts/codegen.md     # spec slice -> BiSheng C
   business: prompts/business.md   # LLM business-logic check over structured assertions
+  conform: prompts/conformance.md # impl -> req conformance (the outer envelope)
 
 schemas:
+  requirements_result: schemas/requirements_result.yaml
   spec_result:      schemas/spec_result.yaml
   codegen_result:   schemas/codegen_result.yaml
   business_verdict: schemas/business_verdict.yaml
+  conformance_result: schemas/conformance_result.yaml
 
 agents:
   # GLM behind the agentic claude CLI (so the bsc-* skills + worktree work).
+  decompose: { backend: claude-cli, model: GLM-5.2,
+               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   author:   { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   codegen:  { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   business: { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
+  conform:  { backend: claude-cli, model: GLM-5.2,
+              env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
 
 params:
-  # the BSC compiler that verifies generated code (clang built with ENABLE_BSC).
-  # point this at a prebuilt bisheng clang; this is the SOUND verification gate.
-  bsc_clang: "{paths.repo}/build/bin/clang"
   # compile a generated .cbs for syntax + ownership/nullability/init checking.
-  # {file} is templated per unit by verify.compile.
-  compile_cmd: ["{pack.bsc_clang}", "-fsyntax-only",
-                "-Wno-nullability-completeness", "{file}"]
+  # {file} is templated per unit by verify.compile. This is the SOUND gate.
+  compile_cmd: ["{paths.bsc_clang}", "-fsyntax-only",
+                "-Wno-nullability-completeness", "-I", "{paths.libcbs}", "{file}"]
   # business floor: the target project's test command (run after a green compile).
   test_cmd: ["ninja", "-C", "{paths.repo}/build", "check-bsc-sdd"]
   # budget guard on every agent.run step (runaway guard + context.json manifest).
