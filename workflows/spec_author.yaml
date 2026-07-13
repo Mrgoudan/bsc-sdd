@@ -1,0 +1,54 @@
+# spec_author — requirement -> spec IR -> validate.
+#
+# Produces the IR (contracts + structured assertions + chains) from a plain
+# requirement, then runs the DETERMINISTIC structural checks (ids unique, refs
+# resolve, chain steps resolve to contracts, impl_files present). No proving
+# here — this only guarantees the spec is well-formed, exactly like SpecLang's
+# mechanical validator. Semantic/business checking happens in sdd_build against
+# the actual code, where the compiler + tests can be sound.
+workflow: spec_author
+consumes: [spec.requested]
+emits: [spec.validated, spec.rejected]
+
+steps:
+  - name: author                     # requirement -> spec IR (the agent writes
+    block: agent.run                 # contracts w/ BSC ownership sigs + business
+    llm: author                      # assertions, filling `formal` when simple).
+    schema: spec_result
+    params: { max_context_bytes: "{pack.max_context_bytes}" }
+    timeout_s: 1800
+    context:
+      - payload                      # the requirement text + feature key
+    outcomes:
+      SPEC: persist
+      EMPTY: rejected
+      agent_limit: parked
+      agent_backend: parked
+      agent_invalid: parked
+      timeout: parked
+
+  - name: persist                    # stage specs/contracts/assertions/chains
+    block: spec.load                 # rows from the agent's IR (never commits;
+    timeout_s: 30                    # engine applies staged ops at the boundary).
+    outcomes: { ok: validate, empty: rejected }
+
+  - name: validate                   # deterministic MC-style structural checks
+    block: spec.validate             # over the staged IR. NOT a proof.
+    timeout_s: 30
+    outcomes: { ok: announce, invalid: rejected }
+
+  - name: announce
+    block: event.emit
+    timeout_s: 10
+    params:
+      name: spec.validated
+      data: { feature_key: "{payload.feature_key}", spec: "{prev.spec}" }
+    outcomes: { ok: done }
+
+  - name: rejected                   # spec was empty or failed structural checks
+    block: event.emit
+    timeout_s: 10
+    params:
+      name: spec.rejected
+      data: { feature_key: "{payload.feature_key}", errors: "{prev.errors}" }
+    outcomes: { ok: done }

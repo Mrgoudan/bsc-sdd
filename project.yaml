@@ -1,0 +1,81 @@
+# bsc-sdd — spec-driven development for BiSheng C.
+#
+# A STANDALONE pack (shares nothing with packs/bsc). The loop is:
+#   requirement -> spec (IR) -> BiSheng C code -> verify -> PR
+#
+# Verification model (see README.md for the full reasoning):
+#   * safety + composition  -> the BSC COMPILER (sound, free). The generated
+#     I/O types carry ownership/nullability/borrow annotations; the compiler
+#     checks them inside each function AND at every call site. That IS the
+#     "do the pieces fit together" design check.
+#   * business logic        -> tests (sound floor) + an LLM check over the
+#     structured assertion slot (Z3-swappable later).
+#
+# Secrets are NOT here — sourced from $FORGEFLOW_SECRETS (0600) by the launcher.
+name: bsc-sdd
+
+paths:
+  # the target project the generated BiSheng C lands in (its own clone, so the
+  # codegen worktree + compile don't touch a dev tree). Everything else is
+  # RELATIVE to this pack dir, resolved to absolute at load.
+  repo:       ~/bsd/bsc-sdd-target
+  data_root:  run                                # pack-local runtime cache (gitignored)
+
+tools:
+  git: { path: git, version_cmd: ["--version"] }
+
+# resource guard: pause claiming under 4 GB free (BSC compiles are the hog).
+min_free_disk_mb: 4096
+
+# Parallel daemon. codegen fans out over functions/modules (lane: llm). The
+# one serialized step is the compile of the shared target build (lane: build,
+# cap 1) — same memory-guard rationale as the review pack.
+concurrency:
+  workers: 3
+  lanes:
+    build: 1            # BSC compile of the target: one at a time
+    llm: 3              # concurrent codegen / author agent calls
+
+workflows: [workflows]
+
+blocks:
+  - blocks/spec.py          # spec.load (stage IR rows), spec.validate (deterministic MC checks)
+  - blocks/codegen.py       # codegen.plan (fan-out units), codegen.write (emit .cbs into worktree)
+  - blocks/verify.py        # verify.compile (BSC build = SOUND gate), verify.test (business floor)
+  - blocks/providers.py     # spec_slice / contracts / assertions context providers (payload optimization)
+
+# The pack's own IR + verification tables (engine core ships only generic ones).
+schema:
+  - schema/schema.sql
+
+prompts:
+  author:  prompts/author.md      # requirement -> spec IR
+  codegen: prompts/codegen.md     # spec slice -> BiSheng C
+  business: prompts/business.md   # LLM business-logic check over structured assertions
+
+schemas:
+  spec_result:      schemas/spec_result.yaml
+  codegen_result:   schemas/codegen_result.yaml
+  business_verdict: schemas/business_verdict.yaml
+
+agents:
+  # GLM behind the agentic claude CLI (so the bsc-* skills + worktree work).
+  author:   { backend: claude-cli, model: GLM-5.2,
+              env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
+  codegen:  { backend: claude-cli, model: GLM-5.2,
+              env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
+  business: { backend: claude-cli, model: GLM-5.2,
+              env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
+
+params:
+  # the BSC compiler that verifies generated code (clang built with ENABLE_BSC).
+  # point this at a prebuilt bisheng clang; this is the SOUND verification gate.
+  bsc_clang: "{paths.repo}/build/bin/clang"
+  # compile a generated .cbs for syntax + ownership/nullability/init checking.
+  # {file} is templated per unit by verify.compile.
+  compile_cmd: ["{pack.bsc_clang}", "-fsyntax-only",
+                "-Wno-nullability-completeness", "{file}"]
+  # business floor: the target project's test command (run after a green compile).
+  test_cmd: ["ninja", "-C", "{paths.repo}/build", "check-bsc-sdd"]
+  # budget guard on every agent.run step (runaway guard + context.json manifest).
+  max_context_bytes: 300000

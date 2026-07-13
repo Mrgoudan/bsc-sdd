@@ -1,0 +1,17 @@
+# The business-check agent's output: the LLM residual over the value/state
+# predicates the compiler can't see (checked against `text` now; a Z3 backend
+# would check `formal` later). verdict enum values become routable outcomes.
+type: object
+required: [verdict]
+properties:
+  verdict: { enum: [PASS, FAIL] }
+  results:
+    type: array
+    items:
+      type: object
+      required: [contract_key, status]
+      properties:
+        contract_key: { type: string }
+        assertion:    { type: string }   # the predicate text checked
+        status:       { enum: [satisfied, violated, cannot_determine] }
+        evidence:     { type: string }   # line ref / counterexample / reasoning

@@ -1,0 +1,100 @@
+# sdd_build — validated spec -> BiSheng C -> verify.
+#
+# The verification model, step by step:
+#   compile  = the SOUND gate. A green BSC compile proves the safety column
+#              (null/own/init/borrow) INSIDE every function AND across every
+#              call site — i.e. the whole safety design + the joins, for free.
+#   test     = the business floor (runs the code, sound per case).
+#   business = the LLM residual: the value/state predicates the compiler can't
+#              see, checked over the STRUCTURED assertion slot (Z3-swappable).
+workflow: sdd_build
+consumes: [spec.validated]
+emits: [sdd.completed, sdd.blocked]
+
+steps:
+  - name: plan                       # fan-out units: one codegen unit per
+    block: codegen.plan              # contract (payload optimization — each
+    timeout_s: 30                    # unit carries only its slice of the spec).
+    outcomes: { ok: workspace, empty: done }
+
+  - name: workspace
+    block: worktree.create
+    timeout_s: 120
+    params: { repo: "{paths.repo}", base: "{payload.base}" }
+    outcomes: { ok: codegen, dirty: failed, timeout: failed }
+
+  - name: codegen                    # spec slice -> BiSheng C. The signature's
+    block: agent.run                 # ownership shape is the design decision;
+    llm: codegen                     # the compiler will hold it accountable.
+    schema: codegen_result
+    params: { max_context_bytes: "{pack.max_context_bytes}" }
+    timeout_s: 1800
+    context:
+      - payload
+      - spec_slice                   # ONLY this unit's contracts (not whole spec)
+      - contracts                    # callee signatures it must call correctly
+    outcomes:
+      CODE: emit_code
+      EMPTY: blocked
+      agent_limit: parked
+      agent_backend: parked
+      agent_invalid: parked
+      timeout: parked
+
+  - name: emit_code                  # write the agent's .cbs into the worktree
+    block: codegen.write
+    timeout_s: 30
+    params: { repo: "{paths.repo}" }
+    outcomes: { ok: compile, empty: failed }
+
+  - name: compile                    # THE SOUND GATE: BSC syntax + ownership +
+    block: verify.compile            # nullability + init, in-function and at
+    lane: build                      # every call site. Green => safety design
+    timeout_s: 3600                  # + joins proven. Red => a real defect.
+    params:
+      cmd: "{pack.compile_cmd}"
+      repo: "{paths.repo}"
+    outcomes:
+      green: test
+      red: blocked                   # (later: route to a regenerate/fix loop)
+      error: blocked
+      timeout: parked
+
+  - name: test                       # business floor: run the target's tests
+    block: verify.test
+    timeout_s: 1800
+    params: { cmd: "{pack.test_cmd}", repo: "{paths.repo}" }
+    outcomes: { pass: business, fail: blocked, error: business, timeout: business }
+
+  - name: business                   # LLM residual: value/state predicates the
+    block: agent.run                 # compiler can't see, over the STRUCTURED
+    llm: business                    # assertion slot (swap to Z3 later).
+    schema: business_verdict
+    params: { max_context_bytes: "{pack.max_context_bytes}" }
+    timeout_s: 1800
+    context:
+      - payload
+      - assertions                   # this spec's business pre/post (text+formal)
+    outcomes:
+      PASS: announce
+      FAIL: blocked
+      agent_limit: parked
+      agent_backend: parked
+      agent_invalid: parked
+      timeout: parked
+
+  - name: announce
+    block: event.emit
+    timeout_s: 10
+    params:
+      name: sdd.completed
+      data: { feature_key: "{payload.feature_key}" }
+    outcomes: { ok: done }
+
+  - name: blocked                    # dead-end marker: emit a signal a human /
+    block: event.emit                # a later fix loop can pick up.
+    timeout_s: 10
+    params:
+      name: sdd.blocked
+      data: { feature_key: "{payload.feature_key}", at: "{prev._step}" }
+    outcomes: { ok: done }

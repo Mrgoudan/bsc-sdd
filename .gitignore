@@ -1,0 +1,8 @@
+# runtime state (daemon db, worktrees, step dirs, caches)
+run/
+# secrets — never commit
+config/secrets.env
+.env
+# python
+__pycache__/
+*.pyc

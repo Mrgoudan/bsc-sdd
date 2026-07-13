@@ -1,0 +1,49 @@
+# The author agent's output contract: the spec IR. `verdict` enum values
+# become the step's routable outcomes; `spec` is the IR that spec.load persists.
+type: object
+required: [verdict]
+properties:
+  verdict: { enum: [SPEC, EMPTY] }
+  spec:
+    type: object
+    required: [feature_key, contracts]
+    properties:
+      feature_key: { type: string }
+      requirement: { type: string }
+      goal:        { type: string }
+      contracts:
+        type: array
+        items:
+          type: object
+          required: [contract_key, signature]
+          properties:
+            contract_key: { type: string }
+            module:       { type: string }
+            # BiSheng C signature WITH ownership annotations — this is the part
+            # the compiler proves (_Owned / _Nonnull / &_Mut / &_Const / ...).
+            signature:    { type: string }
+            summary:      { type: string }
+            impl_file:    { type: string }
+            assertions:
+              type: array
+              items:
+                type: object
+                required: [kind, text]
+                properties:
+                  kind: { enum: [pre, post, side_effect] }
+                  # human-readable predicate — ALWAYS present (LLM reads this now)
+                  text: { type: string }
+                  # structured decidable form — the Z3 slot; fill when simple
+                  formal: { type: string }
+                  # true iff `formal` is in the decidable kernel (Z3-ready)
+                  encodable: { type: boolean }
+      chains:
+        type: array
+        items:
+          type: object
+          required: [chain_key, steps]
+          properties:
+            chain_key: { type: string }
+            steps:
+              type: array
+              items: { type: string }   # each an api contract_key, in call order
