@@ -89,28 +89,37 @@ def codegen_need_skeleton(ctx, task, prev):
     return ("reuse" if row else "build"), {}
 
 
+def _rebuild_cbs(conn, fk, module, root, cbs_path, cbs_head):
+    """.cbs = the module's preamble + that MODULE's bodies (never another's)."""
+    bodies = [b for (b,) in conn.execute(
+        "SELECT body FROM codegen_units WHERE feature_key=? AND module=?"
+        " AND body IS NOT NULL ORDER BY seq", (fk, module))]
+    cbs = cbs_head.rstrip() + ("\n\n" + "\n\n".join(b.strip() for b in bodies) + "\n"
+                               if bodies else "\n")
+    dest = root / cbs_path
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(cbs)
+    return len(bodies)
+
+
 @block("codegen.rehydrate", "state", {"ok", "empty"})
 def codegen_rehydrate(ctx, task, prev):
-    """A modification runs in a FRESH worktree. Restore it from the DB: write the
-    cached .hbs and rebuild the .cbs from the already-done function bodies, so the
+    """A modification runs in a FRESH worktree. Restore EVERY cached module from
+    the DB (its .hbs + a .cbs rebuilt from that module's done bodies), so the
     per-function loop only regenerates the units reconcile marked pending."""
     conn = ctx["_conn"]
     fk = _fk(task)
-    m = conn.execute("SELECT hbs_path, cbs_path, hbs, cbs_head FROM codegen_modules"
-                     " WHERE feature_key=? LIMIT 1", (fk,)).fetchone()
-    if not m:
+    rows = conn.execute("SELECT module, hbs_path, cbs_path, hbs, cbs_head"
+                        " FROM codegen_modules WHERE feature_key=?", (fk,)).fetchall()
+    if not rows:
         return "empty", {}
-    hbs_path, cbs_path, hbs, cbs_head = m
     root = _worktree(ctx, task)
-    (root / hbs_path).parent.mkdir(parents=True, exist_ok=True)
-    (root / hbs_path).write_text(hbs)
-    bodies = [b for (b,) in conn.execute(
-        "SELECT body FROM codegen_units WHERE feature_key=? AND body IS NOT NULL ORDER BY seq",
-        (fk,))]
-    cbs = cbs_head.rstrip() + "\n\n" + "\n\n".join(b.strip() for b in bodies) + "\n"
-    (root / cbs_path).parent.mkdir(parents=True, exist_ok=True)
-    (root / cbs_path).write_text(cbs)
-    return "ok", {"rehydrated_bodies": len(bodies)}
+    restored = 0
+    for module, hbs_path, cbs_path, hbs, cbs_head in rows:
+        (root / hbs_path).parent.mkdir(parents=True, exist_ok=True)
+        (root / hbs_path).write_text(hbs)
+        restored += _rebuild_cbs(conn, fk, module, root, cbs_path, cbs_head)
+    return "ok", {"modules": len(rows), "rehydrated_bodies": restored}
 
 
 @block("codegen.seed_units", "state", {"ok", "empty"})
@@ -171,9 +180,9 @@ def codegen_next_fn(ctx, task, prev):
 
 @block("codegen.write_fn", "state", {"ok", "empty"})
 def codegen_write_fn(ctx, task, prev):
-    """Store the active function's body, then rebuild the .cbs = cbs_head + every
-    non-null body (ordered). Rebuilding (vs appending) means a regenerate cleanly
-    REPLACES the active function's body."""
+    """Store the active function's body, then rebuild ITS MODULE's .cbs from that
+    module's bodies (never another module's). Rebuilding (vs appending) means a
+    regenerate cleanly REPLACES the active function's body."""
     conn = ctx["_conn"]
     fk = _fk(task)
     body = (prev or {}).get("body")
@@ -182,21 +191,23 @@ def codegen_write_fn(ctx, task, prev):
         body = files[0].get("content") if files and isinstance(files[0], dict) else None
     if not body:
         return "empty", {}
+    u = conn.execute("SELECT module FROM codegen_units WHERE feature_key=?"
+                     " AND status='active' LIMIT 1", (fk,)).fetchone()
+    if not u:
+        return "empty", {}
+    module = u[0]
     conn.execute("UPDATE codegen_units SET body=? WHERE feature_key=? AND status='active'",
                  (body, fk))
-    m = conn.execute("SELECT cbs_path, cbs_head FROM codegen_modules WHERE feature_key=? LIMIT 1",
-                     (fk,)).fetchone()
+    m = conn.execute("SELECT cbs_path, cbs_head FROM codegen_modules"
+                     " WHERE feature_key=? AND module=?", (fk, module)).fetchone()
+    if not m:                                   # single-module fallback (legacy row)
+        m = conn.execute("SELECT cbs_path, cbs_head FROM codegen_modules"
+                         " WHERE feature_key=? LIMIT 1", (fk,)).fetchone()
     if not m:
         return "empty", {}
-    cbs_path, head = m
-    bodies = [b for (b,) in conn.execute(
-        "SELECT body FROM codegen_units WHERE feature_key=? AND body IS NOT NULL ORDER BY seq",
-        (fk,))]
-    cbs = head.rstrip() + "\n\n" + "\n\n".join(b.strip() for b in bodies) + "\n"
-    dest = _worktree(ctx, task) / cbs_path
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(cbs)
-    return "ok", {"written": [str(dest)]}
+    root = _worktree(ctx, task)
+    _rebuild_cbs(conn, fk, module, root, m[0], m[1])
+    return "ok", {"written": [str(root / m[0])], "module": module}
 
 
 @block("codegen.mark_done", "state", {"ok"})

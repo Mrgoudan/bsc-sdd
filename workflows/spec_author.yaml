@@ -15,10 +15,13 @@ steps:
     block: agent.run                 # BEFORE the spec, so coverage is independent
     llm: decompose
     schema: requirements_result
+    max_visits: 2                    # one retry, driven by the fidelity gate
     params: { max_context_bytes: "{pack.max_context_bytes}" }
     timeout_s: 1800
     context:
       - payload                      # the raw requirement text + feature key
+      - requirements                 # previous R-* list (keep ids stable on a re-run)
+      - decompose_feedback           # on a retry: the fidelity gate's findings
     outcomes:
       REQS: persist_reqs
       EMPTY: rejected
@@ -27,10 +30,29 @@ steps:
       agent_invalid: parked
       timeout: parked
 
-  - name: persist_reqs               # stage the R-* items by feature_key
+  - name: persist_reqs               # stable-key reconcile of the R-* items
     block: reqs.load
+    max_visits: 2
     timeout_s: 30
-    outcomes: { ok: author, empty: rejected }
+    outcomes: { ok: reqs_check, empty: rejected }
+
+  - name: reqs_check                 # FIDELITY GATE: do the R-* items faithfully
+    block: agent.run                 # capture the RAW request? (missing/invented/
+    llm: reqcheck                    # distorted). The one gate that cannot be
+    schema: reqs_verdict             # sound — so it is disprove-first + retried.
+    max_visits: 2
+    params: { max_context_bytes: "{pack.max_context_bytes}" }
+    timeout_s: 1800
+    context:
+      - payload                      # the raw requirement (the ground truth)
+      - requirements                 # the persisted R-* list under judgment
+    outcomes:
+      PASS: author
+      FAIL: decompose                # re-decompose with the findings; visit caps
+      agent_limit: parked            # bound the loop (2nd FAIL -> budget exhausted)
+      agent_backend: parked
+      agent_invalid: parked
+      timeout: parked
 
   - name: author                     # requirements -> spec IR (contracts w/ BSC
     block: agent.run                 # ownership sigs, business assertions, and a

@@ -76,6 +76,23 @@ def _compile_feedback(env, task, spec):
     return {"file": res.get("file"), "errors": text or "(compile failed)"}
 
 
+@context_provider("decompose_feedback")
+def _decompose_feedback(env, task, spec):
+    """On a decompose retry after the fidelity gate (reqs_check) failed: the
+    gate's findings (missing / invented / distorted items), so the re-decompose
+    fixes exactly those instead of starting over. None on the first pass."""
+    row = env.conn.execute(
+        "SELECT result FROM task_steps WHERE task_id=? AND step='reqs_check'"
+        " AND outcome='FAIL' ORDER BY at DESC LIMIT 1", (task.get("id"),)).fetchone()
+    if not row or not row[0]:
+        return None
+    try:
+        res = json.loads(row[0])
+    except (ValueError, TypeError):
+        return None
+    return {"findings": res.get("findings") or [], "summary": res.get("summary")}
+
+
 @context_provider("requirements")
 def _requirements(env, task, spec):
     """The decomposed, ID'd requirements for this feature. The author maps each
@@ -129,10 +146,18 @@ def _contracts(env, task, spec):
 
 @context_provider("skeleton")
 def _skeleton(env, task, spec):
-    """The frozen module interface (the .hbs) the per-function codegen codes
-    against — the struct, the type set, and every function's declaration."""
+    """The frozen interface (the .hbs) of the ACTIVE function's module — the
+    struct, the type set, and every declaration the body codes against."""
+    fk = _feature_key(task)
+    u = env.conn.execute("SELECT module FROM codegen_units WHERE feature_key=?"
+                         " AND status='active' LIMIT 1", (fk,)).fetchone()
+    if u:
+        r = env.conn.execute("SELECT hbs FROM codegen_modules WHERE feature_key=?"
+                             " AND module=?", (fk, u[0])).fetchone()
+        if r:
+            return {"interface": r[0]}
     r = env.conn.execute("SELECT hbs FROM codegen_modules WHERE feature_key=? LIMIT 1",
-                         (_feature_key(task),)).fetchone()
+                         (fk,)).fetchone()
     return {"interface": r[0]} if r else {}
 
 

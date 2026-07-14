@@ -1,0 +1,17 @@
+# The fidelity gate's output: do the decomposed R-* items faithfully capture
+# the RAW requirement? verdict enum values become routable outcomes; a FAIL
+# routes back to decompose with `findings` as feedback.
+type: object
+required: [verdict]
+properties:
+  verdict: { enum: [PASS, FAIL] }
+  summary: { type: string }
+  findings:
+    type: array
+    items:
+      type: object
+      required: [type, detail]
+      properties:
+        type: { enum: [missing, invented, distorted] }
+        detail:  { type: string }   # the raw statement / the offending item
+        req_key: { type: string }   # the R-* involved, when applicable

@@ -37,4 +37,11 @@ if [ -z "${NO_PROXY_UNSET:-}" ]; then
   unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy
 fi
 
+# column migrations: the engine's IF-NOT-EXISTS schema apply adds new tables
+# but never new columns — bring an existing state DB up to the current pack
+# schema before the engine touches it (idempotent, instant).
+if [ -f "$FF_ROOT/state/forgeflow.db" ]; then
+  python3 "$PACK_DIR/scripts/migrate_db.py" --db "$FF_ROOT/state/forgeflow.db"
+fi
+
 exec python3 -m forgeflow --root "$FF_ROOT" --pack "$PACK_DIR" "$@"

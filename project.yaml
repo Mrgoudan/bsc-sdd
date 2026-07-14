@@ -55,6 +55,7 @@ schema:
 
 prompts:
   decompose: prompts/decompose.md  # requirement prose -> atomic ID'd requirements
+  reqcheck: prompts/reqcheck.md   # fidelity gate: raw requirement <-> R-* items
   author:  prompts/author.md      # requirements -> spec IR (with fulfills trace)
   skeleton: prompts/skeleton.md   # module interface (.hbs + .cbs head), once
   genfn:   prompts/genfn.md       # ONE function body against the skeleton
@@ -63,6 +64,7 @@ prompts:
 
 schemas:
   requirements_result: schemas/requirements_result.yaml
+  reqs_verdict:     schemas/reqs_verdict.yaml
   spec_result:      schemas/spec_result.yaml
   skeleton_result:  schemas/skeleton_result.yaml
   function_result:  schemas/function_result.yaml
@@ -73,6 +75,8 @@ agents:
   # GLM behind the agentic claude CLI (so the bsc-* skills + worktree work).
   decompose: { backend: claude-cli, model: GLM-5.2,
                env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
+  reqcheck: { backend: claude-cli, model: GLM-5.2,
+              env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   author:   { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   skeleton: { backend: claude-cli, model: GLM-5.2,

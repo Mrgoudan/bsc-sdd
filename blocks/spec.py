@@ -56,25 +56,61 @@ def _write_assertions_fulfills(conn, cid, c):
     return n
 
 
+def _norm(s):
+    return " ".join((s or "").split()).lower()
+
+
 @block("reqs.load", "state", {"ok", "empty"})
 def reqs_load(ctx, task, prev):
     """Persist the decomposed requirements (from `decompose`) by feature_key,
     BEFORE the spec is authored — so the coverage gate is an INDEPENDENT
-    completeness check, not the author grading its own decomposition."""
+    completeness check, not the author grading its own decomposition.
+
+    STABLE-KEY RECONCILE, not wipe-and-reinsert: `contract_fulfills` (and via
+    the contract hash, the whole progressive economy) keys on req_key, so a
+    re-decompose that renumbers identical items must not churn keys. Same key ->
+    update in place; new key whose TEXT matches an unclaimed old item -> keep
+    the OLD key (renumbering safety net); truly new -> insert; gone -> delete."""
     conn = ctx["_conn"]
     fk = (task.get("payload") or {}).get("feature_key")
     reqs = (prev or {}).get("requirements") or []
     if not fk or not reqs:
         return "empty", {}
-    conn.execute("DELETE FROM requirements WHERE feature_key=?", (fk,))
-    n = 0
+    old = {k: (t, kd) for k, t, kd in conn.execute(
+        "SELECT req_key, text, kind FROM requirements WHERE feature_key=?", (fk,))}
+    incoming_keys = {r.get("req_key") for r in reqs}
+    # old items whose key the incoming list does NOT reuse, indexed by text —
+    # a renumbered-but-identical item remaps onto its old key
+    text_to_oldkey = {}
+    for k, (t, _kd) in old.items():
+        if k not in incoming_keys:
+            text_to_oldkey.setdefault(_norm(t), k)
+    seen, added, changed = set(), [], []
     for r in reqs:
-        if not r.get("req_key") or not r.get("text"):
+        k, t, kd = r.get("req_key"), r.get("text"), r.get("kind")
+        if not k or not t:
             continue
-        conn.execute("INSERT OR IGNORE INTO requirements(feature_key, req_key, text, kind)"
-                     " VALUES (?,?,?,?)", (fk, r["req_key"], r["text"], r.get("kind")))
-        n += 1
-    return "ok", {"feature_key": fk, "req_count": n}
+        if k not in old:
+            k = text_to_oldkey.pop(_norm(t), k)   # renumbering safety net
+        if k in seen:
+            continue
+        seen.add(k)
+        if k in old:
+            if _norm(old[k][0]) != _norm(t) or (old[k][1] or None) != (kd or None):
+                conn.execute("UPDATE requirements SET text=?, kind=?"
+                             " WHERE feature_key=? AND req_key=?", (t, kd, fk, k))
+                changed.append(k)
+        else:
+            conn.execute("INSERT INTO requirements(feature_key, req_key, text, kind)"
+                         " VALUES (?,?,?,?)", (fk, k, t, kd))
+            added.append(k)
+    removed = sorted(set(old) - seen)
+    for k in removed:
+        conn.execute("DELETE FROM requirements WHERE feature_key=? AND req_key=?", (fk, k))
+    return "ok", {"feature_key": fk, "req_count": len(seen),
+                  "reconcile": {"added": added, "changed": changed,
+                                "removed": removed,
+                                "kept": len(seen) - len(added) - len(changed)}}
 
 
 @block("spec.load", "state", {"ok", "empty"})

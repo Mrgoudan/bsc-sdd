@@ -12,6 +12,13 @@ testable requirements**, each with a stable id. Emit ONE object matching the
   about the implementation. Avoid vague motivation ("should be safe") — turn it
   into the concrete guarantees that make it true.
 - **Stable ids.** Number them `R-1`, `R-2`, … in reading order. Never renumber.
+  If your context includes a previous `requirements` list (this is a re-run),
+  KEEP each unchanged item's existing `req_key` verbatim; give only genuinely
+  new items new keys. Downstream traces key on these ids.
+- **If `decompose_feedback` is present**, a fidelity gate rejected your last
+  attempt: fix exactly its findings — add the `missing` statements, remove the
+  `invented` items, correct the `distorted` ones — and keep everything else as
+  it was.
 - **Classify `kind`:**
   - `behavior` — something the software does (the bulk).
   - `success_signal` — an observable acceptance outcome.
