@@ -160,7 +160,8 @@ def _assertions(env, task, spec):
         " FROM contract_assertions a"
         " JOIN contracts c ON c.id = a.contract_id"
         " JOIN specs s ON s.id = c.spec_id"
-        " WHERE s.feature_key=? ORDER BY c.id, a.seq", (fk,)).fetchall()
+        " WHERE s.feature_key=? AND a.discharged_by != 'compiler'"  # compiler proves those
+        " ORDER BY c.id, a.seq", (fk,)).fetchall()
     out = {}
     for r in rows:
         out.setdefault(r["contract_key"], []).append(

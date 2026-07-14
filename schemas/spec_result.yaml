@@ -42,6 +42,10 @@ properties:
                   formal: { type: string }
                   # true iff `formal` is in the decidable kernel (Z3-ready)
                   encodable: { type: boolean }
+                  # who proves it: `compiler` for safety/ownership/init facts the
+                  # BSC compiler already guarantees (the LLM checks skip these);
+                  # `test`/`llm` for value/state facts. Default llm.
+                  discharged_by: { enum: [compiler, test, llm] }
       chains:
         type: array
         items:

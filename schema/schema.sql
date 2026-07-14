@@ -49,6 +49,11 @@ CREATE TABLE IF NOT EXISTS contract_assertions (
     text          TEXT NOT NULL,                   -- the predicate (always)
     formal        TEXT,                            -- structured form; Z3 reads this later
     encodable     INTEGER NOT NULL DEFAULT 0,
+    -- who proves this predicate. `compiler` = a safety/ownership/init fact the
+    -- BSC compiler already proves (via the signature + destructor) -> the LLM
+    -- business/conformance checks SKIP it (no unsound re-proving). `test`/`llm`
+    -- = a value/state fact for the sound test floor / the LLM residual.
+    discharged_by TEXT NOT NULL DEFAULT 'llm',      -- compiler | test | llm
     seq           INTEGER NOT NULL DEFAULT 0
 );
 

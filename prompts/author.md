@@ -20,15 +20,20 @@ For each function/API the requirements imply, write a `contract`:
   vs `&_Const`, `_Nonnull` vs `_Nullable`, is *designing the feature*, not
   decorating it. The compiler will hold the generated code to this signature
   at every call site — so get the ownership shape right here.
-- **`assertions`** — the business pre/post/side-effects: value and state rules
-  the *compiler cannot see* ("count increases by one", "returns ERR iff the
-  queue is full"). Do **not** restate ownership/null/init here — those live in
-  the signature and are the compiler's job.
+- **`assertions`** — the pre/post/side-effects. Mostly these are *business* value
+  and state rules the compiler cannot see ("count increases by one", "returns ERR
+  iff the queue is full") — tag those `discharged_by: llm` (or `test`).
   - Always write `text` (plain, precise).
   - When the predicate is simple arithmetic / set / enum / equality, ALSO write
     `formal` (e.g. `count == old(count) + 1`) and set `encodable: true`. That is
     the structured slot a solver reads later. If it's fuzzy prose, leave
     `formal` empty and `encodable: false`.
+  - **`discharged_by`** — if a fact is a *safety/ownership/init* guarantee (e.g.
+    "freed exactly once, no leak/double-free", "result is non-null"), the BSC
+    compiler already proves it via the signature + destructor. You MAY record it
+    for traceability, but tag it `discharged_by: compiler` so the LLM checks skip
+    it — never make the model re-argue what the compiler proves. A `_Owned` /
+    `_Nonnull` / borrow fact is *always* `compiler`, never business.
 
 Then write `chains`: for each end-to-end scenario, the ordered `steps` (each a
 `contract_key`) in call order.

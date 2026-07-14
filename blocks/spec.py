@@ -83,9 +83,10 @@ def spec_load(ctx, task, prev):
                 continue
             conn.execute(
                 "INSERT INTO contract_assertions(contract_id, kind, text,"
-                " formal, encodable, seq) VALUES (?,?,?,?,?,?)",
+                " formal, encodable, discharged_by, seq) VALUES (?,?,?,?,?,?,?)",
                 (cid, a["kind"], a["text"], a.get("formal"),
-                 1 if a.get("encodable") else 0, i))
+                 1 if a.get("encodable") else 0,
+                 a.get("discharged_by") or "llm", i))
             n_a += 1
 
     for ch in spec.get("chains") or []:

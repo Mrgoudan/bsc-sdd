@@ -63,13 +63,16 @@ def render(db, feature):
             L.append("    impl_file: %s" % _q(co["impl_file"]))
         if co["summary"]:
             L.append("    summary: %s" % _q(co["summary"]))
-        arows = c.execute("SELECT kind,text,formal,encodable FROM contract_assertions"
+        arows = c.execute("SELECT kind,text,formal,encodable,discharged_by"
+                          " FROM contract_assertions"
                           " WHERE contract_id=? ORDER BY seq", (co["id"],)).fetchall()
         if arows:
             L.append("    assertions:")
             for a in arows:
                 L.append("      - kind: %s" % _q(a["kind"]))
                 L.append("        text: %s" % _q(a["text"]))
+                if a["discharged_by"] and a["discharged_by"] != "llm":
+                    L.append("        discharged_by: %s" % _q(a["discharged_by"]))
                 if a["formal"]:
                     L.append("        formal: %s" % _q(a["formal"]))
                     L.append("        encodable: %s" % ("true" if a["encodable"] else "false"))
