@@ -53,6 +53,23 @@ blocks:
 schema:
   - schema/schema.sql
 
+# Retrieval corpora served through the ENGINE's select: cascade (channels ->
+# RRF -> rerank -> MMR -> budget packing -> utility feedback; vectors cached
+# per row in corpus_embeddings). embed_with: hashing = deterministic lexical
+# vectors, zero setup. PRODUCTION UPGRADE (config, not code): declare a pinned
+# local embedder under models: and point embed_with at it, e.g.
+#   models:
+#     retrieval: { path: /opt/models/embed-small.bin,
+#                  sha256: "<pin>" }          # deterministic: fixed weights
+#   corpora:
+#     green_bodies: { ..., embed_with: retrieval }
+corpora:
+  green_bodies:            # self-improving: every compiled-green function
+    table: green_bodies    # (a view: summary + signature + body)
+    key: key
+    text: text
+    embed_with: hashing
+
 prompts:
   decompose: prompts/decompose.md  # requirement prose -> atomic ID'd requirements
   reqcheck: prompts/reqcheck.md   # fidelity gate: raw requirement <-> R-* items

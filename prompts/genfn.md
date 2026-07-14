@@ -10,10 +10,10 @@ You are given:
 - `active_contract` — the one function to write: its `signature` (match it
   exactly, ownership annotations included) and its behavior `assertions` (the
   value/state rules the body must actually implement).
-- `similar` — retrieval for THIS function: `idioms` (vetted BSC patterns) and,
-  when present, `exemplar` — the most similar function of this module that
-  ALREADY COMPILED GREEN. Mirror the exemplar's ownership/style; do not copy
-  its logic blindly.
+- `similar.idioms` — vetted BSC patterns ranked for THIS function.
+- `select` — when present, the most similar function of this module that
+  ALREADY COMPILED GREEN (its text = summary + signature + body). Mirror its
+  ownership/style; do not copy its logic blindly.
 - `fix_hints` — present only when regenerating: past lessons where a SIMILAR
   compiler error was fixed (`past_error` -> `fixed_body`). Apply the same kind
   of fix to your function.

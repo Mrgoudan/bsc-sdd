@@ -156,6 +156,21 @@ CREATE TABLE IF NOT EXISTS codegen_units (
     UNIQUE (feature_key, module, contract_key)
 );
 
+-- The green-functions corpus, as a VIEW the engine's select: cascade reads:
+-- one row per compiled-green function, text = its contract's summary +
+-- signature + body (searchable AND servable). Self-improving: every green
+-- compile adds a row. Declared in project.yaml corpora as `green_bodies`
+-- (embed_with: hashing today; flip to a pinned model via models: later —
+-- vectors are cached per row by the engine either way).
+CREATE VIEW IF NOT EXISTS green_bodies AS
+    SELECT u.contract_key                        AS key,
+           u.feature_key                         AS feature_key,
+           COALESCE(c.summary, '') || ' ' || c.signature || char(10) || u.body AS text
+    FROM codegen_units u
+    JOIN specs s      ON s.feature_key = u.feature_key
+    JOIN contracts c  ON c.spec_id = s.id AND c.contract_key = u.contract_key
+    WHERE u.status = 'done' AND u.body IS NOT NULL;
+
 -- Error->fix memory: when a function goes red then GREEN, record the error it
 -- hit and the body that fixed it. The fix_hints provider retrieves the closest
 -- past lesson when a NEW function hits a similar error — the pipeline learns

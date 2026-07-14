@@ -175,7 +175,14 @@ def codegen_next_fn(ctx, task, prev):
     remaining = conn.execute(
         "SELECT count(*) FROM codegen_units WHERE feature_key=? AND status!='done'",
         (fk,)).fetchone()[0]
-    return "next", {"contract_key": row[0], "remaining": remaining}
+    # carry the active contract's text: every edge into gen_fn must provide the
+    # select: query fields ({prev.summary} {prev.signature} — strict templating)
+    meta = conn.execute(
+        "SELECT c.summary, c.signature FROM contracts c JOIN specs s ON s.id = c.spec_id"
+        " WHERE s.feature_key=? AND c.contract_key=?", (fk, row[0])).fetchone()
+    return "next", {"contract_key": row[0], "remaining": remaining,
+                    "summary": (meta[0] if meta else "") or "",
+                    "signature": (meta[1] if meta else "") or ""}
 
 
 @block("codegen.write_fn", "state", {"ok", "empty"})
@@ -251,5 +258,12 @@ def codegen_retry_gate(ctx, task, prev):
     cap = int(ctx["cap"])
     if row and row[1] > cap:
         return "giveup", {"contract_key": row[0], "attempts": row[1]}
+    # the retry edge feeds gen_fn too: carry the same select: query fields
+    meta = conn.execute(
+        "SELECT c.summary, c.signature FROM contracts c JOIN specs s ON s.id = c.spec_id"
+        " WHERE s.feature_key=? AND c.contract_key=?",
+        (fk, row[0] if row else "")).fetchone()
     return "retry", {"contract_key": row[0] if row else None,
-                     "attempts": row[1] if row else 0}
+                     "attempts": row[1] if row else 0,
+                     "summary": (meta[0] if meta else "") or "",
+                     "signature": (meta[1] if meta else "") or ""}

@@ -24,6 +24,51 @@ def _tokens(s):
     return set(re.findall(r"[a-z_]{3,}", (s or "").lower()))
 
 
+def _idf_rank(query_text, docs, k):
+    """IDF-weighted ranking (BM25-lite): score = sum of idf over shared tokens /
+    sum of idf over query tokens. Rare tokens dominate, so code boilerplate
+    (_safe, void, json_value...) stops deciding matches — the raw-overlap
+    failure mode at scale. docs = [(payload, text)]; returns [(score, payload)].
+    Deterministic; the pinned-embedder upgrade replaces this per corpus via the
+    engine cascade (see project.yaml corpora)."""
+    import math
+    q = _tokens(query_text)
+    if not q or not docs:
+        return []
+    toks = [_tokens(t) for _, t in docs]
+    n = len(docs)
+    df = {}
+    for ts in toks:
+        for t in ts:
+            df[t] = df.get(t, 0) + 1
+    idf = {t: math.log(1.0 + (n - d + 0.5) / (d + 0.5)) for t, d in df.items()}
+    qmass = sum(idf.get(t, math.log(1.0 + n)) for t in q) or 1.0
+    scored = []
+    for (payload, _), ts in zip(docs, toks):
+        s = sum(idf[t] for t in (q & ts))
+        if s > 0:
+            scored.append((s / qmass, payload))
+    scored.sort(key=lambda x: -x[0])
+    return scored[:k]
+
+
+# error-signature normalization: match compiler errors by CLASS, not by the
+# incidental identifiers/paths/line numbers in one occurrence of it.
+_ERR_PATH = re.compile(r"\S+\.(?:cbs|hbs|cpp|cc|c|h)\b(?::\d+)*")  # longest-first
+_ERR_QUOTED = re.compile(r"'[^']*'|‘[^’]*’|\"[^\"]*\"")
+_ERR_NUM = re.compile(r"\b\d+\b")
+
+
+def error_signature(text):
+    """Normalize a compiler diagnostic to its class: drop file paths, line/col
+    numbers, and quoted identifiers, keep the diagnostic wording."""
+    s = (text or "").lower()
+    s = _ERR_PATH.sub(" ", s)
+    s = _ERR_QUOTED.sub(" <id> ", s)
+    s = _ERR_NUM.sub(" ", s)
+    return " ".join(s.split())
+
+
 @context_provider("similar")
 def _similar(env, task, spec):
     """RAG: the vetted BSC idioms most relevant to the function being generated.
@@ -41,36 +86,15 @@ def _similar(env, task, spec):
         " WHERE s.feature_key=? AND c.contract_key=?", (fk, u[0])).fetchone()
     if not c:
         return []
-    q = _tokens((c["summary"] or "") + " " + (c["signature"] or ""))
-    if not q:
-        return {}
-    scored = []
-    for r in env.conn.execute("SELECT id, title, pattern, tags FROM bsc_idioms"):
-        d = _tokens("%s %s %s" % (r["title"], r["pattern"], r["tags"] or ""))
-        overlap = len(q & d)
-        if overlap:
-            scored.append((overlap / float(len(q | d)), r["title"], r["pattern"]))
-    scored.sort(key=lambda x: -x[0])
+    qtext = (c["summary"] or "") + " " + (c["signature"] or "")
+    docs = [(({"idiom": r["title"], "pattern": r["pattern"]}),
+             "%s %s %s" % (r["title"], r["pattern"], r["tags"] or ""))
+            for r in env.conn.execute("SELECT title, pattern, tags FROM bsc_idioms")]
     k = int((spec or {}).get("k", 2))
-    idioms = [{"score": round(s, 3), "idiom": t, "pattern": p} for s, t, p in scored[:k]]
-
-    # the self-improving half: the most similar already-GREEN function of this
-    # feature as a worked exemplar — every green compile makes this corpus better.
-    best, best_s = None, 0.0
-    for r in env.conn.execute(
-            "SELECT u.contract_key, u.body, c.signature, c.summary"
-            " FROM codegen_units u JOIN contracts c ON c.contract_key = u.contract_key"
-            " JOIN specs s ON s.id = c.spec_id AND s.feature_key = u.feature_key"
-            " WHERE u.feature_key=? AND u.status='done' AND u.body IS NOT NULL"
-            " AND u.contract_key != ?", (fk, u[0])):
-        d = _tokens((r["summary"] or "") + " " + (r["signature"] or ""))
-        if not d:
-            continue
-        s_ = len(q & d) / float(len(q | d))
-        if s_ > best_s:
-            best_s, best = s_, {"contract_key": r["contract_key"],
-                                "score": round(s_, 3), "body": r["body"][:2000]}
-    return {"idioms": idioms, "exemplar": best}
+    # (the green-function EXEMPLAR is served by the select: over the
+    # green_bodies corpus — the engine cascade owns that retrieval now.)
+    return {"idioms": [dict(p, score=round(s, 3))
+                       for s, p in _idf_rank(qtext, docs, k)]}
 
 
 @context_provider("compile_feedback")
@@ -112,21 +136,16 @@ def _fix_hints(env, task, spec):
     sp = res.get("stderr_path")
     if sp and Path(sp).exists():
         err = Path(sp).read_text(errors="replace")[-2000:]
-    q = _tokens(err)
-    if not q:
+    if not err.strip():
         return None
-    scored = []
-    for r in env.conn.execute("SELECT contract_key, error, body FROM fix_lessons"):
-        d = _tokens(r["error"])
-        if not d:
-            continue
-        s_ = len(q & d) / float(len(q | d))
-        if s_ > 0:
-            scored.append((s_, r["contract_key"], r["error"][:300], r["body"][:1500]))
-    scored.sort(key=lambda x: -x[0])
+    # match by error CLASS: both sides normalized (paths/linenos/identifiers
+    # stripped) so 'item' vs 'tmp_fee' wording can't decide the match.
+    docs = [({"from": r["contract_key"], "past_error": r["error"][:300],
+              "fixed_body": r["body"][:1500]}, error_signature(r["error"]))
+            for r in env.conn.execute("SELECT contract_key, error, body FROM fix_lessons")]
     k = int((spec or {}).get("k", 2))
-    return [{"score": round(s_, 3), "past_error": e, "fixed_body": b,
-             "from": ck} for s_, ck, e, b in scored[:k]] or None
+    return [dict(p, score=round(s, 3))
+            for s, p in _idf_rank(error_signature(err), docs, k)] or None
 
 
 @context_provider("prior_art")
@@ -137,32 +156,25 @@ def _prior_art(env, task, spec):
     fk = _feature_key(task)
     if not fk:
         return {}
-    q = _tokens(" ".join(t for (t,) in env.conn.execute(
-        "SELECT text FROM requirements WHERE feature_key=?", (fk,))))
-    if not q:
+    qtext = " ".join(t for (t,) in env.conn.execute(
+        "SELECT text FROM requirements WHERE feature_key=?", (fk,)))
+    if not qtext.strip():
         return {}
-    apis = []
-    for r in env.conn.execute(
+    api_docs = [({"feature": r["fk2"], "contract_key": r["contract_key"],
+                  "signature": r["signature"], "summary": r["summary"]},
+                 (r["summary"] or "") + " " + (r["signature"] or ""))
+                for r in env.conn.execute(
             "SELECT s.feature_key AS fk2, c.contract_key, c.signature, c.summary"
             " FROM contracts c JOIN specs s ON s.id = c.spec_id"
-            " WHERE s.feature_key != ? AND c.status='active'", (fk,)):
-        d = _tokens((r["summary"] or "") + " " + (r["signature"] or ""))
-        if not d:
-            continue
-        s_ = len(q & d) / float(len(q | d))
-        if s_ > 0:
-            apis.append((s_, {"feature": r["fk2"], "contract_key": r["contract_key"],
-                              "signature": r["signature"], "summary": r["summary"]}))
-    apis.sort(key=lambda x: -x[0])
-    idioms = []
-    for r in env.conn.execute("SELECT title, pattern, tags FROM bsc_idioms"):
-        d = _tokens("%s %s %s" % (r["title"], r["pattern"], r["tags"] or ""))
-        s_ = len(q & d) / float(len(q | d)) if d else 0
-        if s_ > 0:
-            idioms.append((s_, {"idiom": r["title"], "pattern": r["pattern"]}))
-    idioms.sort(key=lambda x: -x[0])
-    return {"existing_apis": [a for _, a in apis[:5]],
-            "design_idioms": [i for _, i in idioms[:3]]}
+            " WHERE s.feature_key != ? AND c.status='active'", (fk,))]
+    idiom_docs = [({"idiom": r["title"], "pattern": r["pattern"]},
+                   "%s %s %s" % (r["title"], r["pattern"], r["tags"] or ""))
+                  for r in env.conn.execute("SELECT title, pattern, tags FROM bsc_idioms")]
+    # NOTE: prose->code vocabulary gap is where lexical fails first; this corpus
+    # is the first candidate for the pinned-embedder flip (see project.yaml).
+    return {"existing_apis": [dict(p, score=round(s, 3))
+                              for s, p in _idf_rank(qtext, api_docs, 5)],
+            "design_idioms": [p for _, p in _idf_rank(qtext, idiom_docs, 3)]}
 
 
 @context_provider("decompose_feedback")
