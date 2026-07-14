@@ -54,10 +54,15 @@ steps:
     timeout_s: 30                    # engine applies staged ops at the boundary).
     outcomes: { ok: validate, empty: rejected }
 
-  - name: validate                   # deterministic MC-style structural checks
-    block: spec.validate             # over the staged IR. NOT a proof.
+  - name: validate                   # deterministic structural checks + coverage
+    block: spec.validate             # gate over the IR. NOT a proof.
     timeout_s: 30
-    outcomes: { ok: announce, invalid: rejected }
+    outcomes: { ok: design_check, invalid: rejected }
+
+  - name: design_check               # MECHANICAL join gate: every new-and-direct
+    block: design.check              # call's qualifier handoff must be compatible.
+    timeout_s: 30                    # Deterministic; catches an inconsistent
+    outcomes: { ok: announce, broken: rejected }   # DESIGN before any codegen.
 
   - name: announce
     block: event.emit

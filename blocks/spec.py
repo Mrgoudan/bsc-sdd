@@ -28,6 +28,8 @@ def _contract_hash(c):
         "module": c.get("module") or "",
         "impl_file": c.get("impl_file") or "",
         "fulfills": sorted(c.get("fulfills") or []),
+        "calls": [[cl.get("callee", ""), sorted((cl.get("args") or {}).items())]
+                  for cl in (c.get("calls") or [])],   # a call change re-gens the fn
         "assertions": sorted(
             [a.get("kind", ""), a.get("text", ""), a.get("formal") or "",
              a.get("discharged_by") or "llm"]

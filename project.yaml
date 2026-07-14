@@ -43,7 +43,8 @@ concurrency:
 workflows: [workflows]
 
 blocks:
-  - blocks/spec.py          # spec.load (stage IR rows), spec.validate (deterministic MC checks)
+  - blocks/spec.py          # spec.load (incremental reconcile), spec.validate (structural + coverage)
+  - blocks/design.py        # design.check — mechanical join gate (qualifier handoffs), before codegen
   - blocks/codegen.py       # codegen.plan (fan-out units), codegen.write (emit .cbs into worktree)
   - blocks/verify.py        # verify.compile (BSC build = SOUND gate), verify.test (business floor)
   - blocks/providers.py     # spec_slice / contracts / assertions context providers (payload optimization)

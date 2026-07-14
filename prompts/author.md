@@ -35,6 +35,23 @@ For each function/API the requirements imply, write a `contract`:
     it — never make the model re-argue what the compiler proves. A `_Owned` /
     `_Nonnull` / borrow fact is *always* `compiler`, never business.
 
+- **`calls`** — the DIRECT calls this function makes to OTHER new functions in
+  this spec (NOT library calls like safe_malloc, NOT transitive calls), with the
+  arg data-flow so the mechanical gate can check each handoff:
+  ```
+  calls:
+    - callee: API-CREATE-NUMBER            # a contract_key you also defined
+    - callee: API-OBJECT-ADD
+      args:
+        obj:   param:obj                   # <- this function's `obj` parameter
+        value: result:API-CREATE-NUMBER    # <- the _Owned value that call returns
+  ```
+  A source is `param:<name>` (a parameter of THIS function) or
+  `result:<contract_key>` (the return of a new function you call). Get the
+  ownership flow right: an `_Owned` result may be moved into exactly ONE call; a
+  `_Borrow` cannot be passed where `_Owned` is required. A deterministic gate
+  rejects the spec if a handoff is incompatible — before any code is generated.
+
 Then write `chains`: for each end-to-end scenario, the ordered `steps` (each a
 `contract_key`) in call order.
 

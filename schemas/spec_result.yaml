@@ -23,6 +23,21 @@ properties:
             fulfills:
               type: array
               items: { type: string }
+            # DIRECT calls this function makes to OTHER new functions (not
+            # library/transitive), with the arg data-flow. The mechanical design
+            # gate checks each handoff's qualifier compatibility before codegen.
+            #   callee: a contract_key
+            #   args:   { paramName: source }  where source is
+            #           "param:<name>" (this fn's param) or "result:<contract_key>"
+            #           (the _Owned/etc. return of a directly-called new function)
+            calls:
+              type: array
+              items:
+                type: object
+                required: [callee]
+                properties:
+                  callee: { type: string }
+                  args:   { type: object }
             module:       { type: string }
             # BiSheng C signature WITH ownership annotations — this is the part
             # the compiler proves (_Owned / _Nonnull / &_Mut / &_Const / ...).
