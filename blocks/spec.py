@@ -1,6 +1,6 @@
 """spec blocks — persist the spec IR and run the DETERMINISTIC structural
 checks. No proving here: spec.validate only guarantees the IR is well-formed
-(the MC-* layer). Semantic/business checking happens later against real code,
+(the MC-* layer). Semantic/behavior checking happens later against real code,
 where the compiler + tests are sound.
 
 Block rules: outcomes from structure only; db writes via conn on the state

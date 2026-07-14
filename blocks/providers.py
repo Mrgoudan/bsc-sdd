@@ -3,8 +3,8 @@ prompt carries only what's relevant (payload optimization), not the whole spec.
 
   spec_slice  the contracts to generate (this unit's work)
   contracts   callee signatures the generated code must call correctly
-  assertions  the business pre/post (text + structured `formal`) for the
-              business check — the LLM reads `text` now; a Z3 backend reads
+  assertions  the behavior pre/post (text + structured `formal`) for the
+              behavior check — the LLM reads `text` now; a Z3 backend reads
               `formal` later, same rows.
 """
 from __future__ import annotations
@@ -164,7 +164,7 @@ def _skeleton(env, task, spec):
 @context_provider("active_contract")
 def _active_contract(env, task, spec):
     """The ONE function currently being generated (codegen_units.status='active')
-    — its signature + business assertions. Keeps each gen call's context to a
+    — its signature + behavior assertions. Keeps each gen call's context to a
     single function, not the whole module."""
     fk = _feature_key(task)
     u = env.conn.execute("SELECT contract_key FROM codegen_units"
@@ -211,7 +211,7 @@ def _req_trace(env, task, spec):
 
 @context_provider("assertions")
 def _assertions(env, task, spec):
-    """Business pre/post/side-effects for the feature: {contract_key: [...]}.
+    """Behavior pre/post/side-effects for the feature: {contract_key: [...]}.
     Each carries `text` (LLM reads now) and `formal`+`encodable` (Z3 later)."""
     fk = _feature_key(task)
     if not fk:

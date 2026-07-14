@@ -1,10 +1,10 @@
-# Business check — verify the value/state predicates against the code
+# Behavior check — verify the value/state predicates against the code
 
 The compiler already proved the safety column (null/own/init/borrow) and the
-build is green. Your job is ONLY the **business** assertions — the value and
-state rules the compiler can't see. Emit ONE object matching `business_verdict`.
+build is green. Your job is ONLY the **behavior** assertions — the value and
+state rules the compiler can't see. Emit ONE object matching `behavior_verdict`.
 
-## For each business assertion (in `assertions`)
+## For each behavior assertion (in `assertions`)
 
 1. **Find the real code** that implements the contract.
 2. **Disprove first**: try to construct the smallest input/path that *violates*
@@ -23,4 +23,4 @@ it in natural language. Later a solver will discharge those same rows. Treat a
 ## Output
 
 `results: [{contract_key, assertion, status, evidence}]`. `verdict: FAIL` if any
-business assertion is `violated`; else `PASS`.
+behavior assertion is `violated`; else `PASS`.

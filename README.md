@@ -18,19 +18,19 @@ A compiler you already have is a **sound verifier**. BiSheng C statically checks
 ownership, nullability, initialization, and borrows — *inside* every function
 **and at every call site**. So the whole safety design, and whether the pieces
 fit together, is proven **by compiling**. We spend our own effort only on the
-one thing the compiler can't see: **business logic**.
+one thing the compiler can't see: **behavior logic**.
 
 ### Verification model
 
-|  | **Safety** (null/own/init/borrow) | **Business** (counts, states, "iff full") |
+|  | **Safety** (null/own/init/borrow) | **Behavior** (counts, states, "iff full") |
 |---|---|---|
 | **inside a function** | BiSheng C compiler — *sound, free* | tests · LLM residual |
 | **between functions** | BiSheng C compiler (annotations at call sites) — *sound, free* | tests · LLM residual |
 
 - **`verify.compile`** is the sound gate. Green ⇒ the entire left column holds,
   end to end. Red ⇒ a real defect.
-- **`verify.test`** is the business floor — runs the code, sound per case.
-- **`business` (agent)** is the LLM residual — the value/state predicates the
+- **`verify.test`** is the behavior floor — runs the code, sound per case.
+- **`behavior` (agent)** is the LLM residual — the value/state predicates the
   compiler can't express. Checked over a **structured assertion slot** today by
   an LLM, swappable for a solver later (see below).
 
@@ -45,7 +45,7 @@ handoff implications — not a foundation.
 
 - **`specs`** — one per feature, from a requirement.
 - **`contracts`** — one per function. `signature` carries the BSC ownership
-  shape (the compiler-checked part). Business rules live in:
+  shape (the compiler-checked part). Behavior rules live in:
 - **`contract_assertions`** — pre/post/side-effects. `text` is always present
   (LLM reads it now); `formal` + `encodable` are the **structured slot** a Z3
   backend reads later, *without re-authoring the spec*.
@@ -78,7 +78,7 @@ compiler/test floor.
 - **`sdd_build`** — `spec.validated` → `codegen.plan` (units = modules) →
   worktree → `codegen` → `codegen.write` → **`verify.compile`** (sound gate;
   `red` → back to `codegen` with the errors, capped) → `verify.test` →
-  `business` (LLM residual) → `conformance` (impl→req) → emits
+  `behavior` (LLM residual) → `conformance` (impl→req) → emits
   `sdd.completed` / `sdd.blocked`.
 
 ---

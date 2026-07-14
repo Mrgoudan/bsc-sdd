@@ -1,7 +1,7 @@
 # Conformance — does the code fulfill the requirements?
 
 The compiler already proved the safety design and the build is green; the tests
-and the business check already ran. This is the OUTER, end-to-end check: for
+and the behavior check already ran. This is the OUTER, end-to-end check: for
 each atomic requirement, does the generated code actually **do what the
 requirement asked**? Emit ONE object matching `conformance_result`.
 

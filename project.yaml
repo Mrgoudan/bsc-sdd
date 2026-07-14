@@ -8,7 +8,7 @@
 #     I/O types carry ownership/nullability/borrow annotations; the compiler
 #     checks them inside each function AND at every call site. That IS the
 #     "do the pieces fit together" design check.
-#   * business logic        -> tests (sound floor) + an LLM check over the
+#   * behavior logic        -> tests (sound floor) + an LLM check over the
 #     structured assertion slot (Z3-swappable later).
 #
 # Secrets are NOT here — sourced from $FORGEFLOW_SECRETS (0600) by the launcher.
@@ -46,7 +46,7 @@ blocks:
   - blocks/spec.py          # spec.load (incremental reconcile), spec.validate (structural + coverage)
   - blocks/design.py        # design.check — mechanical join gate (qualifier handoffs), before codegen
   - blocks/codegen.py       # codegen.plan (fan-out units), codegen.write (emit .cbs into worktree)
-  - blocks/verify.py        # verify.compile (BSC build = SOUND gate), verify.test (business floor)
+  - blocks/verify.py        # verify.compile (BSC build = SOUND gate), verify.test (behavior floor)
   - blocks/providers.py     # spec_slice / contracts / assertions context providers (payload optimization)
 
 # The pack's own IR + verification tables (engine core ships only generic ones).
@@ -59,7 +59,7 @@ prompts:
   author:  prompts/author.md      # requirements -> spec IR (with fulfills trace)
   skeleton: prompts/skeleton.md   # module interface (.hbs + .cbs head), once
   genfn:   prompts/genfn.md       # ONE function body against the skeleton
-  business: prompts/business.md   # LLM business-logic check over structured assertions
+  behavior: prompts/behavior.md   # LLM behavior-logic check over structured assertions
   conform: prompts/conformance.md # impl -> req conformance (the outer envelope)
 
 schemas:
@@ -68,7 +68,7 @@ schemas:
   spec_result:      schemas/spec_result.yaml
   skeleton_result:  schemas/skeleton_result.yaml
   function_result:  schemas/function_result.yaml
-  business_verdict: schemas/business_verdict.yaml
+  behavior_verdict: schemas/behavior_verdict.yaml
   conformance_result: schemas/conformance_result.yaml
 
 agents:
@@ -83,7 +83,7 @@ agents:
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   genfn:    { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
-  business: { backend: claude-cli, model: GLM-5.2,
+  behavior: { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   conform:  { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
@@ -93,7 +93,7 @@ params:
   # {file} is templated per unit by verify.compile. This is the SOUND gate.
   compile_cmd: ["{paths.bsc_clang}", "-fsyntax-only",
                 "-Wno-nullability-completeness", "-I", "{paths.libcbs}", "{file}"]
-  # business floor: the target project's test command (run after a green compile).
+  # behavior floor: the target project's test command (run after a green compile).
   test_cmd: ["ninja", "-C", "{paths.repo}/build", "check-bsc-sdd"]
   # budget guard on every agent.run step (runaway guard + context.json manifest).
   max_context_bytes: 300000

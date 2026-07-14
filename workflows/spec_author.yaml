@@ -4,7 +4,7 @@
 # requirement, then runs the DETERMINISTIC structural checks (ids unique, refs
 # resolve, chain steps resolve to contracts, impl_files present). No proving
 # here — this only guarantees the spec is well-formed, exactly like SpecLang's
-# mechanical validator. Semantic/business checking happens in sdd_build against
+# mechanical validator. Semantic/behavior checking happens in sdd_build against
 # the actual code, where the compiler + tests can be sound.
 workflow: spec_author
 consumes: [spec.requested]
@@ -55,7 +55,7 @@ steps:
       timeout: parked
 
   - name: author                     # requirements -> spec IR (contracts w/ BSC
-    block: agent.run                 # ownership sigs, business assertions, and a
+    block: agent.run                 # ownership sigs, behavior assertions, and a
     llm: author                      # `fulfills` trace to the R-* items).
     schema: spec_result
     params: { max_context_bytes: "{pack.max_context_bytes}" }

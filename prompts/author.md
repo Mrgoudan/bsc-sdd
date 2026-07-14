@@ -20,7 +20,7 @@ For each function/API the requirements imply, write a `contract`:
   vs `&_Const`, `_Nonnull` vs `_Nullable`, is *designing the feature*, not
   decorating it. The compiler will hold the generated code to this signature
   at every call site — so get the ownership shape right here.
-- **`assertions`** — the pre/post/side-effects. Mostly these are *business* value
+- **`assertions`** — the pre/post/side-effects. Mostly these are *behavior* value
   and state rules the compiler cannot see ("count increases by one", "returns ERR
   iff the queue is full") — tag those `discharged_by: llm` (or `test`).
   - Always write `text` (plain, precise).
@@ -33,7 +33,7 @@ For each function/API the requirements imply, write a `contract`:
     compiler already proves it via the signature + destructor. You MAY record it
     for traceability, but tag it `discharged_by: compiler` so the LLM checks skip
     it — never make the model re-argue what the compiler proves. A `_Owned` /
-    `_Nonnull` / borrow fact is *always* `compiler`, never business.
+    `_Nonnull` / borrow fact is *always* `compiler`, never behavior.
 
 - **`calls`** — the DIRECT calls this function makes to OTHER new functions in
   this spec (NOT library calls like safe_malloc, NOT transitive calls), with the

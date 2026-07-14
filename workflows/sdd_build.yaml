@@ -4,8 +4,8 @@
 #   compile  = the SOUND gate. A green BSC compile proves the safety column
 #              (null/own/init/borrow) INSIDE every function AND across every
 #              call site — i.e. the whole safety design + the joins, for free.
-#   test     = the business floor (runs the code, sound per case).
-#   business = the LLM residual: the value/state predicates the compiler can't
+#   test     = the behavior floor (runs the code, sound per case).
+#   behavior = the LLM residual: the value/state predicates the compiler can't
 #              see, checked over the STRUCTURED assertion slot (Z3-swappable).
 workflow: sdd_build
 consumes: [spec.validated]
@@ -121,21 +121,21 @@ steps:
     timeout_s: 30
     outcomes: { ok: next_fn }
 
-  - name: test                       # business floor: run the target's tests
+  - name: test                       # behavior floor: run the target's tests
     block: verify.test
     timeout_s: 1800
     params: { cmd: "{pack.test_cmd}", repo: "{paths.repo}" }
-    outcomes: { pass: business, fail: blocked, error: business, timeout: business }
+    outcomes: { pass: behavior, fail: blocked, error: behavior, timeout: behavior }
 
-  - name: business                   # LLM residual: value/state predicates the
+  - name: behavior                   # LLM residual: value/state predicates the
     block: agent.run                 # compiler can't see, over the STRUCTURED
-    llm: business                    # assertion slot (swap to Z3 later).
-    schema: business_verdict
+    llm: behavior                    # assertion slot (swap to Z3 later).
+    schema: behavior_verdict
     params: { max_context_bytes: "{pack.max_context_bytes}" }
     timeout_s: 1800
     context:
       - payload
-      - assertions                   # this spec's business pre/post (text+formal)
+      - assertions                   # this spec's behavior pre/post (text+formal)
     outcomes:
       PASS: conformance
       FAIL: blocked
