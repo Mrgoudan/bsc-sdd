@@ -21,7 +21,12 @@ steps:
     block: worktree.create
     timeout_s: 120
     params: { repo: "{paths.repo}", base: "{payload.base}" }
-    outcomes: { ok: skeleton, dirty: failed, timeout: failed }
+    outcomes: { ok: need_skeleton, dirty: failed, timeout: failed }
+
+  - name: need_skeleton              # first run / signature change -> build the
+    block: codegen.need_skeleton     # skeleton; a plain modification -> reuse the
+    timeout_s: 10                    # cached one (restore the worktree from DB).
+    outcomes: { build: skeleton, reuse: rehydrate }
 
   - name: skeleton                   # the module interface, ONCE: .hbs (struct +
     block: agent.run                 # EVERY declaration) + .cbs preamble. Frozen,
@@ -44,6 +49,11 @@ steps:
     block: codegen.skel_write
     timeout_s: 30
     outcomes: { ok: seed_units, empty: blocked }
+
+  - name: rehydrate                  # modification: restore the fresh worktree
+    block: codegen.rehydrate         # from the DB (cached .hbs + done bodies), so
+    timeout_s: 60                    # the loop re-gens only the pending units.
+    outcomes: { ok: seed_units, empty: skeleton }
 
   - name: seed_units                 # one pending unit per function
     block: codegen.seed_units

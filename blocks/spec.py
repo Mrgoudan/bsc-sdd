@@ -8,12 +8,50 @@ class; nothing committed here (the engine owns the step-boundary transaction).
 """
 from __future__ import annotations
 
+import hashlib
+import json
+
 from forgeflow.blocks import block
 
 
 def _get_spec(prev):
     """The author agent's IR, carried in prev['spec'] (see schemas/spec_result)."""
     return (prev or {}).get("spec") or {}
+
+
+def _contract_hash(c):
+    """Content hash of everything that determines a contract's generated code —
+    signature, assertions, fulfills, paths. Reconcile diffs on this: same hash =>
+    the function's code is still valid; different => re-codegen just that one."""
+    payload = {
+        "signature": c.get("signature", ""),
+        "module": c.get("module") or "",
+        "impl_file": c.get("impl_file") or "",
+        "fulfills": sorted(c.get("fulfills") or []),
+        "assertions": sorted(
+            [a.get("kind", ""), a.get("text", ""), a.get("formal") or "",
+             a.get("discharged_by") or "llm"]
+            for a in (c.get("assertions") or [])),
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def _write_assertions_fulfills(conn, cid, c):
+    """(re)write a contract's assertions + fulfills rows. Returns assertion count."""
+    for rk in (c.get("fulfills") or []):
+        conn.execute("INSERT OR IGNORE INTO contract_fulfills(contract_id, req_key)"
+                     " VALUES (?,?)", (cid, rk))
+    n = 0
+    for i, a in enumerate(c.get("assertions") or []):
+        if not a.get("kind") or not a.get("text"):
+            continue
+        conn.execute(
+            "INSERT INTO contract_assertions(contract_id, kind, text,"
+            " formal, encodable, discharged_by, seq) VALUES (?,?,?,?,?,?,?)",
+            (cid, a["kind"], a["text"], a.get("formal"),
+             1 if a.get("encodable") else 0, a.get("discharged_by") or "llm", i))
+        n += 1
+    return n
 
 
 @block("reqs.load", "state", {"ok", "empty"})
@@ -39,66 +77,93 @@ def reqs_load(ctx, task, prev):
 
 @block("spec.load", "state", {"ok", "empty"})
 def spec_load(ctx, task, prev):
-    """Stage the IR into specs / contracts / contract_assertions / chains.
-    Idempotent on feature_key so a re-run replaces cleanly."""
+    """INCREMENTAL reconcile of the IR into the DB — the heart of progressive
+    (non-waterfall) SDD. Diffs the new IR against the existing spec by
+    contract_key + content hash:
+      - unchanged  -> left alone (its done codegen unit + body survive)
+      - changed    -> updated; its codegen unit invalidated (-> pending)
+      - added      -> inserted (a pending unit is seeded in sdd_build)
+      - removed    -> dropped, with its codegen unit
+    A signature change ripples through the interface, so it dirties the skeleton
+    and re-pends every unit (coarse but correct; the compiler catches callers).
+    """
     conn = ctx["_conn"]
     spec = _get_spec(prev)
     contracts = spec.get("contracts") or []
-    if not spec.get("feature_key") or not contracts:
+    fk = spec.get("feature_key")
+    if not fk or not contracts:
         return "empty", {}
 
-    fk = spec["feature_key"]
-    # replace any prior draft of this feature (cascade by hand — no FK cascade)
     row = conn.execute("SELECT id FROM specs WHERE feature_key=?", (fk,)).fetchone()
     if row:
-        old = row[0]
-        conn.execute("DELETE FROM contract_assertions WHERE contract_id IN"
-                     " (SELECT id FROM contracts WHERE spec_id=?)", (old,))
-        conn.execute("DELETE FROM contracts WHERE spec_id=?", (old,))
-        conn.execute("DELETE FROM chains WHERE spec_id=?", (old,))
-        conn.execute("DELETE FROM specs WHERE id=?", (old,))
+        spec_id = row[0]
+        conn.execute("UPDATE specs SET requirement=?, goal=? WHERE id=?",
+                     (spec.get("requirement", ""), spec.get("goal"), spec_id))
+    else:
+        spec_id = conn.execute(
+            "INSERT INTO specs(feature_key, requirement, goal, status)"
+            " VALUES (?,?,?, 'draft')",
+            (fk, spec.get("requirement", ""), spec.get("goal"))).lastrowid
 
-    cur = conn.execute(
-        "INSERT INTO specs(feature_key, requirement, goal, status)"
-        " VALUES (?,?,?, 'draft')",
-        (fk, spec.get("requirement", ""), spec.get("goal")))
-    spec_id = cur.lastrowid
+    existing = {r[0]: (r[1], r[2], r[3]) for r in conn.execute(   # ck -> (id, hash, sig)
+        "SELECT contract_key, id, hash, signature FROM contracts WHERE spec_id=?", (spec_id,))}
+    new_keys, added, changed = set(), [], []
+    sig_changed = False
 
-    n_c = n_a = n_s = 0
     for c in contracts:
-        if not c.get("contract_key") or not c.get("signature"):
+        ck = c.get("contract_key")
+        if not ck or not c.get("signature"):
             continue
-        cc = conn.execute(
-            "INSERT INTO contracts(spec_id, contract_key, module, signature,"
-            " summary, impl_file) VALUES (?,?,?,?,?,?)",
-            (spec_id, c["contract_key"], c.get("module"), c["signature"],
-             c.get("summary"), c.get("impl_file")))
-        cid = cc.lastrowid
-        n_c += 1
-        for rk in (c.get("fulfills") or []):        # the req->spec trace
-            conn.execute("INSERT OR IGNORE INTO contract_fulfills(contract_id, req_key)"
-                         " VALUES (?,?)", (cid, rk))
-        for i, a in enumerate(c.get("assertions") or []):
-            if not a.get("kind") or not a.get("text"):
-                continue
-            conn.execute(
-                "INSERT INTO contract_assertions(contract_id, kind, text,"
-                " formal, encodable, discharged_by, seq) VALUES (?,?,?,?,?,?,?)",
-                (cid, a["kind"], a["text"], a.get("formal"),
-                 1 if a.get("encodable") else 0,
-                 a.get("discharged_by") or "llm", i))
-            n_a += 1
+        new_keys.add(ck)
+        h = _contract_hash(c)
+        if ck in existing:
+            cid, old_hash, old_sig = existing[ck]
+            if old_hash == h:
+                continue                                    # unchanged — keep done unit
+            conn.execute("UPDATE contracts SET module=?, signature=?, summary=?,"
+                         " impl_file=?, hash=? WHERE id=?",
+                         (c.get("module"), c["signature"], c.get("summary"),
+                          c.get("impl_file"), h, cid))
+            conn.execute("DELETE FROM contract_assertions WHERE contract_id=?", (cid,))
+            conn.execute("DELETE FROM contract_fulfills WHERE contract_id=?", (cid,))
+            _write_assertions_fulfills(conn, cid, c)
+            conn.execute("UPDATE codegen_units SET status='pending', body=NULL, attempts=0"
+                         " WHERE feature_key=? AND contract_key=?", (fk, ck))
+            changed.append(ck)
+            if c["signature"] != old_sig:
+                sig_changed = True
+        else:
+            cid = conn.execute(
+                "INSERT INTO contracts(spec_id, contract_key, module, signature,"
+                " summary, impl_file, hash) VALUES (?,?,?,?,?,?,?)",
+                (spec_id, ck, c.get("module"), c["signature"], c.get("summary"),
+                 c.get("impl_file"), h)).lastrowid
+            _write_assertions_fulfills(conn, cid, c)
+            added.append(ck)
 
+    removed = [ck for ck in existing if ck not in new_keys]
+    for ck in removed:
+        cid = existing[ck][0]
+        conn.execute("DELETE FROM contract_assertions WHERE contract_id=?", (cid,))
+        conn.execute("DELETE FROM contract_fulfills WHERE contract_id=?", (cid,))
+        conn.execute("DELETE FROM contracts WHERE id=?", (cid,))
+        conn.execute("DELETE FROM codegen_units WHERE feature_key=? AND contract_key=?", (fk, ck))
+
+    if sig_changed:                                         # interface rippled
+        conn.execute("DELETE FROM codegen_modules WHERE feature_key=?", (fk,))
+        conn.execute("UPDATE codegen_units SET status='pending', body=NULL, attempts=0"
+                     " WHERE feature_key=?", (fk,))
+
+    conn.execute("DELETE FROM chains WHERE spec_id=?", (spec_id,))   # chains: cheap replace
     for ch in spec.get("chains") or []:
-        ck = ch.get("chain_key")
         for seq, step in enumerate(ch.get("steps") or []):
-            conn.execute(
-                "INSERT INTO chains(spec_id, chain_key, step_seq, contract_key)"
-                " VALUES (?,?,?,?)", (spec_id, ck, seq, step))
-            n_s += 1
+            conn.execute("INSERT INTO chains(spec_id, chain_key, step_seq, contract_key)"
+                         " VALUES (?,?,?,?)", (spec_id, ch.get("chain_key"), seq, step))
 
     return "ok", {"spec": spec, "spec_id": spec_id,
-                  "counts": {"contracts": n_c, "assertions": n_a, "steps": n_s}}
+                  "reconcile": {"added": added, "changed": changed, "removed": removed,
+                                "unchanged": len(new_keys) - len(added) - len(changed),
+                                "sig_changed": sig_changed}}
 
 
 @block("spec.validate", "state", {"ok", "invalid"})

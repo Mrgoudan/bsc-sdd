@@ -79,22 +79,70 @@ def codegen_skel_write(ctx, task, prev):
     return "ok", {"module": module, "hbs_path": hbs_path, "cbs_path": cbs_path}
 
 
-@block("codegen.seed_units", "state", {"ok", "empty"})
-def codegen_seed_units(ctx, task, prev):
-    """One codegen_units row per contract in the module (status pending)."""
+@block("codegen.need_skeleton", "state", {"build", "reuse"})
+def codegen_need_skeleton(ctx, task, prev):
+    """Is there a cached skeleton for this feature? 'reuse' on a modification
+    (skeleton survived; reconcile drops it only on a signature change), 'build'
+    on a first run or after a signature change."""
+    row = ctx["_conn"].execute(
+        "SELECT 1 FROM codegen_modules WHERE feature_key=? LIMIT 1", (_fk(task),)).fetchone()
+    return ("reuse" if row else "build"), {}
+
+
+@block("codegen.rehydrate", "state", {"ok", "empty"})
+def codegen_rehydrate(ctx, task, prev):
+    """A modification runs in a FRESH worktree. Restore it from the DB: write the
+    cached .hbs and rebuild the .cbs from the already-done function bodies, so the
+    per-function loop only regenerates the units reconcile marked pending."""
     conn = ctx["_conn"]
     fk = _fk(task)
-    conn.execute("DELETE FROM codegen_units WHERE feature_key=?", (fk,))
+    m = conn.execute("SELECT hbs_path, cbs_path, hbs, cbs_head FROM codegen_modules"
+                     " WHERE feature_key=? LIMIT 1", (fk,)).fetchone()
+    if not m:
+        return "empty", {}
+    hbs_path, cbs_path, hbs, cbs_head = m
+    root = _worktree(ctx, task)
+    (root / hbs_path).parent.mkdir(parents=True, exist_ok=True)
+    (root / hbs_path).write_text(hbs)
+    bodies = [b for (b,) in conn.execute(
+        "SELECT body FROM codegen_units WHERE feature_key=? AND body IS NOT NULL ORDER BY seq",
+        (fk,))]
+    cbs = cbs_head.rstrip() + "\n\n" + "\n\n".join(b.strip() for b in bodies) + "\n"
+    (root / cbs_path).parent.mkdir(parents=True, exist_ok=True)
+    (root / cbs_path).write_text(cbs)
+    return "ok", {"rehydrated_bodies": len(bodies)}
+
+
+@block("codegen.seed_units", "state", {"ok", "empty"})
+def codegen_seed_units(ctx, task, prev):
+    """Ensure a codegen_units row per active contract — IDEMPOTENT across runs:
+    new contracts get a pending unit; existing units keep whatever status
+    reconcile left (done stays done, changed is pending); contracts no longer
+    active are dropped. This is what makes a modification re-gen only the deltas."""
+    conn = ctx["_conn"]
+    fk = _fk(task)
     rows = conn.execute(
         "SELECT c.contract_key, c.module FROM contracts c JOIN specs s ON s.id = c.spec_id"
         " WHERE s.feature_key=? AND c.status='active' ORDER BY c.id", (fk,)).fetchall()
     if not rows:
         return "empty", {}
+    existing = {ck for (ck,) in conn.execute(
+        "SELECT contract_key FROM codegen_units WHERE feature_key=?", (fk,))}
+    active = []
     for i, (ck, mod) in enumerate(rows):
-        conn.execute(
-            "INSERT INTO codegen_units(feature_key, module, contract_key, seq, status)"
-            " VALUES (?,?,?,?, 'pending')", (fk, mod or "default", ck, i))
-    return "ok", {"units": len(rows)}
+        active.append(ck)
+        if ck in existing:
+            conn.execute("UPDATE codegen_units SET seq=? WHERE feature_key=? AND contract_key=?",
+                         (i, fk, ck))
+        else:
+            conn.execute(
+                "INSERT INTO codegen_units(feature_key, module, contract_key, seq, status)"
+                " VALUES (?,?,?,?, 'pending')", (fk, mod or "default", ck, i))
+    conn.execute("DELETE FROM codegen_units WHERE feature_key=? AND contract_key NOT IN (%s)"
+                 % ",".join("?" * len(active)), [fk] + active)
+    pending = conn.execute("SELECT count(*) FROM codegen_units"
+                           " WHERE feature_key=? AND status='pending'", (fk,)).fetchone()[0]
+    return "ok", {"units": len(rows), "pending": pending}
 
 
 @block("codegen.next_fn", "state", {"next", "done"})

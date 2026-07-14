@@ -33,6 +33,10 @@ CREATE TABLE IF NOT EXISTS contracts (
     summary       TEXT,                            -- natural-language description
     impl_file     TEXT,                            -- planned implementation file (.cbs)
     status        TEXT NOT NULL DEFAULT 'active',  -- active | superseded
+    -- content hash of (signature + assertions + fulfills). On a spec
+    -- modification, reconcile diffs by this: unchanged hash => keep the done
+    -- codegen unit; changed => re-codegen only that function.
+    hash          TEXT,
     UNIQUE (spec_id, contract_key)
 );
 
