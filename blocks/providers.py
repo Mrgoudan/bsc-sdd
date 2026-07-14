@@ -10,6 +10,7 @@ prompt carries only what's relevant (payload optimization), not the whole spec.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from forgeflow.contract import context_provider
@@ -17,6 +18,41 @@ from forgeflow.contract import context_provider
 
 def _feature_key(task):
     return (task.get("payload") or {}).get("feature_key")
+
+
+def _tokens(s):
+    return set(re.findall(r"[a-z_]{3,}", (s or "").lower()))
+
+
+@context_provider("similar")
+def _similar(env, task, spec):
+    """RAG: the vetted BSC idioms most relevant to the function being generated.
+    Query = the ACTIVE function's summary + signature (per-function retrieval —
+    the engine's select: only queries the payload, which is fixed per task, so
+    we retrieve here). Lexical (token-overlap) ranking, the same class as the
+    engine's embed_with: hashing. `spec.k` = how many to return (default 2)."""
+    fk = _feature_key(task)
+    u = env.conn.execute("SELECT contract_key FROM codegen_units"
+                         " WHERE feature_key=? AND status='active' LIMIT 1", (fk,)).fetchone()
+    if not u:
+        return []
+    c = env.conn.execute(
+        "SELECT c.signature, c.summary FROM contracts c JOIN specs s ON s.id = c.spec_id"
+        " WHERE s.feature_key=? AND c.contract_key=?", (fk, u[0])).fetchone()
+    if not c:
+        return []
+    q = _tokens((c["summary"] or "") + " " + (c["signature"] or ""))
+    if not q:
+        return []
+    scored = []
+    for r in env.conn.execute("SELECT id, title, pattern, tags FROM bsc_idioms"):
+        d = _tokens("%s %s %s" % (r["title"], r["pattern"], r["tags"] or ""))
+        overlap = len(q & d)
+        if overlap:
+            scored.append((overlap / float(len(q | d)), r["title"], r["pattern"]))
+    scored.sort(key=lambda x: -x[0])
+    k = int((spec or {}).get("k", 2))
+    return [{"score": round(s, 3), "idiom": t, "pattern": p} for s, t, p in scored[:k]]
 
 
 @context_provider("compile_feedback")

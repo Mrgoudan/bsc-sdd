@@ -112,6 +112,17 @@ CREATE TABLE IF NOT EXISTS contract_fulfills (
     PRIMARY KEY (contract_id, req_key)
 );
 
+-- RAG corpus: vetted BSC idioms retrieved per-function by the `similar`
+-- provider (query = the active function's summary + signature). Lexical
+-- retrieval, same class as the engine's embed_with: hashing. Seed from
+-- data/idioms.jsonl via scripts/seed_idioms.py.
+CREATE TABLE IF NOT EXISTS bsc_idioms (
+    id            TEXT PRIMARY KEY,                -- stable idiom id
+    title         TEXT NOT NULL,                   -- short name
+    pattern       TEXT NOT NULL,                   -- the idiom (shown to codegen)
+    tags          TEXT                             -- extra retrieval terms
+);
+
 -- Incremental within-module codegen. A module is generated as: a frozen
 -- skeleton (the .hbs interface + the .cbs preamble) produced ONCE, then one
 -- function body at a time, compiling after each. This avoids the whole-file
