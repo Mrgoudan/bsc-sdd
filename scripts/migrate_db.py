@@ -22,6 +22,8 @@ MIGRATIONS = [
      "ALTER TABLE contract_assertions ADD COLUMN discharged_by TEXT NOT NULL DEFAULT 'llm'"),
     ("codegen_units", "attempts",
      "ALTER TABLE codegen_units ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"),
+    ("codegen_units", "last_error",
+     "ALTER TABLE codegen_units ADD COLUMN last_error TEXT"),
 ]
 
 

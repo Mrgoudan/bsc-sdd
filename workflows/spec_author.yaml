@@ -63,6 +63,7 @@ steps:
     context:
       - payload                      # the requirement text + feature key
       - requirements                 # the decomposed R-* items to cover + trace
+      - prior_art                    # reuse-first: existing APIs (other features) + design idioms
     outcomes:
       SPEC: persist
       EMPTY: rejected

@@ -55,6 +55,14 @@ For each function/API the requirements imply, write a `contract`:
 Then write `chains`: for each end-to-end scenario, the ordered `steps` (each a
 `contract_key`) in call order.
 
+## Reuse first (`prior_art`)
+
+`prior_art.existing_apis` lists contracts that ALREADY EXIST in other features
+of this project, ranked by relevance to your requirements. If one already does
+(or nearly does) what a requirement needs, reference it in `calls` / design
+around it — do NOT re-invent it under a new name. `prior_art.design_idioms`
+are vetted ownership patterns; prefer their shapes when choosing signatures.
+
 ## Rules
 
 - Stable ids: never regenerate a `contract_key` or `chain_key`.

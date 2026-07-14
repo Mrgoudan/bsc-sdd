@@ -69,6 +69,25 @@ impl --conformance--> each R checked against its mapped code (LLM, sound=0)
 deterministic; the conformance verdict is the honest LLM layer over the sound
 compiler/test floor.
 
+## What each agent is served
+
+Every agent step gets a deliberate slice — deterministic joins where the need is
+exact, retrieval where it's similarity. All of it is provider queries over the
+DB, so "why did the model see this" is always answerable.
+
+| agent | decision | served |
+|---|---|---|
+| `decompose` | prose → `R-*` | raw text · previous `R-*` list (stable ids) · fidelity-gate findings on retry |
+| `reqs_check` | is the list faithful? | raw text · the `R-*` list (self-contained by design) |
+| `author` | design the API surface | `R-*` items · **`prior_art`** (existing APIs from other features + design idioms, ranked by the requirement texts — reuse-first) |
+| `skeleton` | freeze the interface | the module's contracts (`spec_slice`) |
+| `gen_fn` | one function body | frozen skeleton · the one contract · compiler errors on retry · **`similar`** (idioms + the most similar already-GREEN function as exemplar) · **`fix_hints`** (past same-error → fixed-body lessons) |
+| `behavior` | judge residual predicates | each non-compiler assertion **with its generated body inline** |
+| `conform` | impl → requirement | each `R-*` with its fulfilling contracts **and their bodies inline** |
+
+Two of these corpora are self-improving: every green compile grows the exemplar
+corpus, and every red-then-green fight records a `fix_lessons` row.
+
 ## Pipeline (`workflows/`)
 
 - **`spec_author`** — `spec.requested` → **`decompose`** (prose → `R-*`) →

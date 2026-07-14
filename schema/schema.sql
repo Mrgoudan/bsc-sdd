@@ -152,5 +152,19 @@ CREATE TABLE IF NOT EXISTS codegen_units (
     status        TEXT NOT NULL DEFAULT 'pending', -- pending | active | done
     attempts      INTEGER NOT NULL DEFAULT 0,      -- per-function regenerate count
     body          TEXT,
+    last_error    TEXT,                            -- last red compile's stderr (fix-lesson capture)
     UNIQUE (feature_key, module, contract_key)
+);
+
+-- Error->fix memory: when a function goes red then GREEN, record the error it
+-- hit and the body that fixed it. The fix_hints provider retrieves the closest
+-- past lesson when a NEW function hits a similar error — the pipeline learns
+-- from its own compiler fights.
+CREATE TABLE IF NOT EXISTS fix_lessons (
+    id            INTEGER PRIMARY KEY,
+    feature_key   TEXT NOT NULL,
+    contract_key  TEXT NOT NULL,
+    error         TEXT NOT NULL,                   -- the compiler error that was overcome
+    body          TEXT NOT NULL,                   -- the body that went green
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );

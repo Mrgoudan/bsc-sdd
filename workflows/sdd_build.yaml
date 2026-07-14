@@ -79,7 +79,8 @@ steps:
       - skeleton                     # the frozen .hbs interface to code against
       - active_contract              # this ONE function: signature + assertions
       - compile_feedback             # on a retry: the compiler's errors to fix
-      - similar: { k: 2 }            # RAG: top-2 vetted BSC idioms for THIS function
+      - similar: { k: 2 }            # RAG: idioms + the most similar GREEN function
+      - fix_hints: { k: 2 }          # on a retry: past (same error -> fixed body) lessons
     outcomes:
       FUNCTION: write_fn
       EMPTY: blocked

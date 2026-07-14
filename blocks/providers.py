@@ -43,7 +43,7 @@ def _similar(env, task, spec):
         return []
     q = _tokens((c["summary"] or "") + " " + (c["signature"] or ""))
     if not q:
-        return []
+        return {}
     scored = []
     for r in env.conn.execute("SELECT id, title, pattern, tags FROM bsc_idioms"):
         d = _tokens("%s %s %s" % (r["title"], r["pattern"], r["tags"] or ""))
@@ -52,7 +52,25 @@ def _similar(env, task, spec):
             scored.append((overlap / float(len(q | d)), r["title"], r["pattern"]))
     scored.sort(key=lambda x: -x[0])
     k = int((spec or {}).get("k", 2))
-    return [{"score": round(s, 3), "idiom": t, "pattern": p} for s, t, p in scored[:k]]
+    idioms = [{"score": round(s, 3), "idiom": t, "pattern": p} for s, t, p in scored[:k]]
+
+    # the self-improving half: the most similar already-GREEN function of this
+    # feature as a worked exemplar — every green compile makes this corpus better.
+    best, best_s = None, 0.0
+    for r in env.conn.execute(
+            "SELECT u.contract_key, u.body, c.signature, c.summary"
+            " FROM codegen_units u JOIN contracts c ON c.contract_key = u.contract_key"
+            " JOIN specs s ON s.id = c.spec_id AND s.feature_key = u.feature_key"
+            " WHERE u.feature_key=? AND u.status='done' AND u.body IS NOT NULL"
+            " AND u.contract_key != ?", (fk, u[0])):
+        d = _tokens((r["summary"] or "") + " " + (r["signature"] or ""))
+        if not d:
+            continue
+        s_ = len(q & d) / float(len(q | d))
+        if s_ > best_s:
+            best_s, best = s_, {"contract_key": r["contract_key"],
+                                "score": round(s_, 3), "body": r["body"][:2000]}
+    return {"idioms": idioms, "exemplar": best}
 
 
 @context_provider("compile_feedback")
@@ -74,6 +92,77 @@ def _compile_feedback(env, task, spec):
     if sp and Path(sp).exists():
         text = Path(sp).read_text(errors="replace")[-4000:]
     return {"file": res.get("file"), "errors": text or "(compile failed)"}
+
+
+@context_provider("fix_hints")
+def _fix_hints(env, task, spec):
+    """When the current function is red: the closest past (error -> body that
+    fixed it) lessons, ranked by error-text overlap. The pipeline learning from
+    its own compiler fights. None on a first pass (no red)."""
+    row = env.conn.execute(
+        "SELECT result FROM task_steps WHERE task_id=? AND step='compile'"
+        " AND outcome='red' ORDER BY at DESC LIMIT 1", (task.get("id"),)).fetchone()
+    if not row or not row[0]:
+        return None
+    try:
+        res = json.loads(row[0])
+    except (ValueError, TypeError):
+        return None
+    err = ""
+    sp = res.get("stderr_path")
+    if sp and Path(sp).exists():
+        err = Path(sp).read_text(errors="replace")[-2000:]
+    q = _tokens(err)
+    if not q:
+        return None
+    scored = []
+    for r in env.conn.execute("SELECT contract_key, error, body FROM fix_lessons"):
+        d = _tokens(r["error"])
+        if not d:
+            continue
+        s_ = len(q & d) / float(len(q | d))
+        if s_ > 0:
+            scored.append((s_, r["contract_key"], r["error"][:300], r["body"][:1500]))
+    scored.sort(key=lambda x: -x[0])
+    k = int((spec or {}).get("k", 2))
+    return [{"score": round(s_, 3), "past_error": e, "fixed_body": b,
+             "from": ck} for s_, ck, e, b in scored[:k]] or None
+
+
+@context_provider("prior_art")
+def _prior_art(env, task, spec):
+    """Reuse-first for the author: existing contracts from OTHER features whose
+    purpose matches this feature's requirements (call/extend them instead of
+    duplicating), plus the closest design idioms. Query = the R-* texts."""
+    fk = _feature_key(task)
+    if not fk:
+        return {}
+    q = _tokens(" ".join(t for (t,) in env.conn.execute(
+        "SELECT text FROM requirements WHERE feature_key=?", (fk,))))
+    if not q:
+        return {}
+    apis = []
+    for r in env.conn.execute(
+            "SELECT s.feature_key AS fk2, c.contract_key, c.signature, c.summary"
+            " FROM contracts c JOIN specs s ON s.id = c.spec_id"
+            " WHERE s.feature_key != ? AND c.status='active'", (fk,)):
+        d = _tokens((r["summary"] or "") + " " + (r["signature"] or ""))
+        if not d:
+            continue
+        s_ = len(q & d) / float(len(q | d))
+        if s_ > 0:
+            apis.append((s_, {"feature": r["fk2"], "contract_key": r["contract_key"],
+                              "signature": r["signature"], "summary": r["summary"]}))
+    apis.sort(key=lambda x: -x[0])
+    idioms = []
+    for r in env.conn.execute("SELECT title, pattern, tags FROM bsc_idioms"):
+        d = _tokens("%s %s %s" % (r["title"], r["pattern"], r["tags"] or ""))
+        s_ = len(q & d) / float(len(q | d)) if d else 0
+        if s_ > 0:
+            idioms.append((s_, {"idiom": r["title"], "pattern": r["pattern"]}))
+    idioms.sort(key=lambda x: -x[0])
+    return {"existing_apis": [a for _, a in apis[:5]],
+            "design_idioms": [i for _, i in idioms[:3]]}
 
 
 @context_provider("decompose_feedback")
@@ -194,6 +283,9 @@ def _req_trace(env, task, spec):
     fk = _feature_key(task)
     if not fk:
         return []
+    bodies = dict(env.conn.execute(
+        "SELECT contract_key, body FROM codegen_units"
+        " WHERE feature_key=? AND body IS NOT NULL", (fk,)))
     out = []
     for r in env.conn.execute(
             "SELECT req_key, text FROM requirements WHERE feature_key=? ORDER BY id", (fk,)):
@@ -205,7 +297,9 @@ def _req_trace(env, task, spec):
         out.append({"req_key": r["req_key"], "text": r["text"],
                     "contracts": [{"contract_key": x["contract_key"],
                                    "signature": x["signature"],
-                                   "impl_file": x["impl_file"]} for x in cons]})
+                                   "impl_file": x["impl_file"],
+                                   "body": (bodies.get(x["contract_key"]) or "")[:3000] or None}
+                                  for x in cons]})
     return out
 
 
@@ -223,9 +317,15 @@ def _assertions(env, task, spec):
         " JOIN specs s ON s.id = c.spec_id"
         " WHERE s.feature_key=? AND a.discharged_by != 'compiler'"  # compiler proves those
         " ORDER BY c.id, a.seq", (fk,)).fetchall()
-    out = {}
+    grouped = {}
     for r in rows:
-        out.setdefault(r["contract_key"], []).append(
+        grouped.setdefault(r["contract_key"], []).append(
             {"kind": r["kind"], "text": r["text"],
              "formal": r["formal"], "encodable": bool(r["encodable"])})
-    return out
+    # serve the CODE with the claims: the judge gets each contract's generated
+    # body (from codegen_units) instead of hunting the worktree for it.
+    bodies = dict(env.conn.execute(
+        "SELECT contract_key, body FROM codegen_units"
+        " WHERE feature_key=? AND body IS NOT NULL", (fk,)))
+    return [{"contract_key": ck, "impl": (bodies.get(ck) or "")[:4000] or None,
+             "assertions": asserts} for ck, asserts in grouped.items()]

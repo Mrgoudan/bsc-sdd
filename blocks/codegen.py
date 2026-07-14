@@ -212,23 +212,40 @@ def codegen_write_fn(ctx, task, prev):
 
 @block("codegen.mark_done", "state", {"ok"})
 def codegen_mark_done(ctx, task, prev):
-    """The active function compiled green -> mark it done and advance."""
+    """The active function compiled green -> mark it done and advance. If it
+    went red on the way (attempts > 0), record the (error -> body that fixed it)
+    pair as a fix_lesson — the corpus fix_hints retrieves from later."""
     conn = ctx["_conn"]
+    fk = _fk(task)
+    u = conn.execute("SELECT contract_key, attempts, last_error, body FROM codegen_units"
+                     " WHERE feature_key=? AND status='active' LIMIT 1", (fk,)).fetchone()
+    lesson = 0
+    if u and u[1] and u[2] and u[3]:            # fought the compiler and won
+        conn.execute("INSERT INTO fix_lessons(feature_key, contract_key, error, body)"
+                     " VALUES (?,?,?,?)", (fk, u[0], u[2][:2000], u[3]))
+        lesson = 1
     conn.execute("UPDATE codegen_units SET status='done'"
-                 " WHERE feature_key=? AND status='active'", (_fk(task),))
-    return "ok", {}
+                 " WHERE feature_key=? AND status='active'", (fk,))
+    return "ok", {"lesson_recorded": lesson}
 
 
 @block("codegen.retry_gate", "state", {"retry", "giveup"}, required_params={"cap"})
 def codegen_retry_gate(ctx, task, prev):
     """The active function failed to compile. Bump its per-function attempt count
     and decide: regenerate ('retry') or give up ('giveup') once it exceeds `cap`.
+    Also stash the compiler's error on the unit (last_error) — if this function
+    later goes green, mark_done turns (error, fixed body) into a fix_lesson.
     This is the PER-FUNCTION cap; the step's max_visits is only the global loop
     backstop (a module has many functions, so the loop steps run many times)."""
     conn = ctx["_conn"]
     fk = _fk(task)
-    conn.execute("UPDATE codegen_units SET attempts = attempts + 1"
-                 " WHERE feature_key=? AND status='active'", (fk,))
+    err_text = None
+    sp = (prev or {}).get("stderr_path")
+    if sp and Path(sp).exists():
+        err_text = Path(sp).read_text(errors="replace")[-2000:]
+    conn.execute("UPDATE codegen_units SET attempts = attempts + 1, last_error ="
+                 " COALESCE(?, last_error) WHERE feature_key=? AND status='active'",
+                 (err_text, fk))
     row = conn.execute("SELECT contract_key, attempts FROM codegen_units"
                        " WHERE feature_key=? AND status='active' LIMIT 1", (fk,)).fetchone()
     cap = int(ctx["cap"])
