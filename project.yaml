@@ -22,7 +22,7 @@ paths:
   # the existing bisheng compiler that verifies generated code — the SOUND gate.
   # a prebuilt clang (ENABLE_BSC); -fsyntax-only, no build needed. machine-specific.
   bsc_clang:  ~/bsd/llvm-project-dup/build/bin/clang
-  libcbs:     ~/bsd/llvm-project-dup/libcbs/src/bishengc_safety
+  libcbs_src: ~/bsd/llvm-project-dup/libcbs/src   # root of the BSC stdlib headers
   data_root:  run                                # pack-local runtime cache (gitignored)
 
 tools:
@@ -108,8 +108,16 @@ agents:
 params:
   # compile a generated .cbs for syntax + ownership/nullability/init checking.
   # {file} is templated per unit by verify.compile. This is the SOUND gate.
-  compile_cmd: ["{paths.bsc_clang}", "-fsyntax-only",
-                "-Wno-nullability-completeness", "-I", "{paths.libcbs}", "{file}"]
+  # every libcbs module dir is an include root (string.hbs, vec.hbs, ... are
+  # included bare by generated headers, mirroring how libcbs code includes them)
+  compile_cmd: ["{paths.bsc_clang}", "-fsyntax-only", "-Wno-nullability-completeness",
+                "-I", "{paths.libcbs_src}/bishengc_safety", "-I", "{paths.libcbs_src}/string",
+                "-I", "{paths.libcbs_src}/vec", "-I", "{paths.libcbs_src}/option",
+                "-I", "{paths.libcbs_src}/result", "-I", "{paths.libcbs_src}/slice",
+                "-I", "{paths.libcbs_src}/cell", "-I", "{paths.libcbs_src}/rc",
+                "-I", "{paths.libcbs_src}/hash", "-I", "{paths.libcbs_src}/map",
+                "-I", "{paths.libcbs_src}/list", "-I", "{paths.libcbs_src}/raw_vec",
+                "-I", "{paths.libcbs_src}/raw_table", "{file}"]
   # behavior floor: the target project's test command (run after a green compile).
   test_cmd: ["ninja", "-C", "{paths.repo}/build", "check-bsc-sdd"]
   # budget guard on every agent.run step (runaway guard + context.json manifest).
