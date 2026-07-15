@@ -42,6 +42,35 @@ concurrency:
     build: 1            # BSC compile of the target: one at a time
     llm: 3              # concurrent codegen / author agent calls
 
+# the board: daemon-served dashboard at http://127.0.0.1:8791 (loopback-only,
+# no token needed; SSH-tunnel it from another machine).
+http: { host: 127.0.0.1, port: 8791 }
+
+# pack panels for the engine board (read-only SELECTs, generic widgets):
+board:
+  overview_panels:
+    - title: open questions (answer via ./run-bsc-sdd.sh answer)
+      kind: table
+      sql: "SELECT feature_key, stage, q_key, question, recommended
+            FROM dialogue WHERE answer IS NULL ORDER BY id"
+    - title: verification trail (latest 12)
+      kind: table
+      sql: "SELECT checker, target, verdict, CASE sound WHEN 1 THEN 'sound'
+            ELSE 'argued' END AS basis, at FROM verifications
+            ORDER BY id DESC LIMIT 12"
+  task_panels:
+    - title: functions
+      kind: status_grid
+      sql: "SELECT contract_key AS label, status, attempts
+            FROM codegen_units WHERE feature_key = :fk ORDER BY seq"
+      params: { fk: feature_key }
+    - title: dialogue (this feature)
+      kind: table
+      sql: "SELECT stage, q_key, question, COALESCE(answer,'(open)') AS answer,
+            COALESCE(answered_by,'') AS decided_by FROM dialogue
+            WHERE feature_key = :fk ORDER BY id"
+      params: { fk: feature_key }
+
 workflows: [workflows]
 
 blocks:
