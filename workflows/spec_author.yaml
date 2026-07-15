@@ -77,6 +77,7 @@ steps:
       - payload                      # the requirement text + feature key
       - requirements                 # the decomposed R-* items to cover + trace
       - dialogue                     # the Q&A so far (answers are requirements)
+      - current_spec                 # existing contracts: re-emit unchanged ones VERBATIM
       - prior_art                    # reuse-first: existing APIs (other features) + design idioms
     outcomes:
       SPEC: ask_a

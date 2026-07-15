@@ -24,7 +24,7 @@ import sys
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", required=True)
-    ap.add_argument("--feature", required=True)
+    ap.add_argument("--feature", help="feature key (auto when only one has open questions)")
     ap.add_argument("--stage", help="decompose | author (default: all stages)")
     ap.add_argument("--set", action="append", default=[], metavar="Q-ID=ANSWER")
     ap.add_argument("--accept-defaults", action="store_true",
@@ -33,6 +33,19 @@ def main():
 
     conn = sqlite3.connect(a.db)
     conn.row_factory = sqlite3.Row
+    if not a.feature:
+        feats = [r[0] for r in conn.execute(
+            "SELECT DISTINCT feature_key FROM dialogue WHERE answer IS NULL")]
+        if len(feats) == 1:
+            a.feature = feats[0]
+        elif not feats:
+            print("no open questions in any feature")
+            return
+        else:
+            print("open questions in several features — pick one with --feature:")
+            for f in feats:
+                print("  ", f)
+            return
     stage_sql = " AND stage=?" if a.stage else ""
     stage_arg = [a.stage] if a.stage else []
 

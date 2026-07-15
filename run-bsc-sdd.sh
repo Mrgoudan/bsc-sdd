@@ -44,6 +44,26 @@ if [ -f "$FF_ROOT/state/forgeflow.db" ]; then
   python3 "$PACK_DIR/scripts/migrate_db.py" --db "$FF_ROOT/state/forgeflow.db"
 fi
 
+# the requirement dialogue, without ceremony:
+#   ./run-bsc-sdd.sh questions              # what is the pipeline waiting on?
+#   ./run-bsc-sdd.sh answer Q-1=replace     # answer + auto-resume
+#   ./run-bsc-sdd.sh answer --accept-defaults
+if [ "${1:-}" = "questions" ]; then
+  shift
+  exec python3 "$PACK_DIR/scripts/answer.py" --db "$FF_ROOT/state/forgeflow.db" "$@"
+fi
+if [ "${1:-}" = "answer" ]; then
+  shift
+  ARGS=()
+  for a in "$@"; do
+    case "$a" in
+      Q-*=*|q-*=*) ARGS+=("--set" "$a");;   # bare Q-1=x sugar
+      *)           ARGS+=("$a");;
+    esac
+  done
+  exec python3 "$PACK_DIR/scripts/answer.py" --db "$FF_ROOT/state/forgeflow.db" "${ARGS[@]}"
+fi
+
 # one daemon per root: a second `run` would reset the live daemon's running
 # tasks as "orphans" and race its walks. flock makes the second start a no-op.
 export PYTHONUNBUFFERED=1                 # daemon logs flush line-by-line

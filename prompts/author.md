@@ -78,6 +78,15 @@ When something is genuinely ambiguous and the code cannot answer it:
   pipeline parks until the user answers; you will re-run with the answer in
   `dialogue`. Ask everything you need in ONE round when possible.
 
+## Re-runs: keep unchanged contracts VERBATIM (`current_spec`)
+
+If `current_spec` is present, this is a revision of an existing spec. Contracts
+the requirement change does NOT affect must be re-emitted **byte-identical**
+(same signature, summary, assertions, calls, fulfills — copy them from
+`current_spec`). Only contracts genuinely touched by the change may differ.
+The pipeline diffs by content hash: gratuitous rewording forces pointless
+re-implementation of functions that were already proven.
+
 ## Reuse first (`prior_art`)
 
 `prior_art.existing_apis` lists contracts that ALREADY EXIST in other features

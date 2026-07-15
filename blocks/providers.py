@@ -177,6 +177,37 @@ def _prior_art(env, task, spec):
             "design_idioms": [p for _, p in _idf_rank(qtext, idiom_docs, 3)]}
 
 
+@context_provider("current_spec")
+def _current_spec(env, task, spec):
+    """THIS feature's existing spec, in full (a re-run aid): the author must
+    re-emit unchanged contracts VERBATIM so their content hashes stay stable and
+    the reconcile re-pends only what the requirement change actually touched.
+    Without this, paraphrase noise would masquerade as semantic change."""
+    fk = _feature_key(task)
+    if not fk:
+        return []
+    out = []
+    for c in env.conn.execute(
+            "SELECT c.id, c.contract_key, c.module, c.signature, c.summary,"
+            " c.impl_file FROM contracts c JOIN specs s ON s.id = c.spec_id"
+            " WHERE s.feature_key=? AND c.status='active' ORDER BY c.id", (fk,)):
+        asserts = [{"kind": a["kind"], "text": a["text"], "formal": a["formal"],
+                    "encodable": bool(a["encodable"]),
+                    "discharged_by": a["discharged_by"]}
+                   for a in env.conn.execute(
+                       "SELECT kind, text, formal, encodable, discharged_by"
+                       " FROM contract_assertions WHERE contract_id=?"
+                       " ORDER BY seq", (c["id"],))]
+        fulfills = [r[0] for r in env.conn.execute(
+            "SELECT req_key FROM contract_fulfills WHERE contract_id=?"
+            " ORDER BY req_key", (c["id"],))]
+        out.append({"contract_key": c["contract_key"], "module": c["module"],
+                    "signature": c["signature"], "summary": c["summary"],
+                    "impl_file": c["impl_file"], "fulfills": fulfills,
+                    "assertions": asserts})
+    return out
+
+
 @context_provider("dialogue")
 def _dialogue(env, task, spec):
     """The requirement Q&A so far — the multi-turn memory. Answered rows are

@@ -58,6 +58,14 @@ int main(void) {
           "lookup returns the value that was set");
     check(cJSON_ObjectGet(&_Const *root, "missing") == 0, "absent key is not-present");
 
+    /* duplicate key: last write wins, single member per key */
+    JSON_Value *_Owned _Nonnull v2 = cJSON_CreateString("world");
+    cJSON_ObjectAdd(&_Mut *root, "name", v2);
+    const JSON_Value *_Borrow _Nullable g2 = cJSON_ObjectGet(&_Const *root, "name");
+    check(g2 != 0 && cJSON_IsString(g2)
+          && strcmp((const char *)cJSON_GetString(g2), "world") == 0,
+          "duplicate key: last write wins");
+
     /* deleting the root frees the whole nested tree */
     cJSON_Delete(root);
 
