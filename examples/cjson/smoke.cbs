@@ -1,0 +1,70 @@
+/* cJSON-BSC Phase-1 smoke test — the runtime half of the sound floor.
+ *
+ * Exercises the REQUIREMENT's success signals against the generated API:
+ *   - a string value keeps its OWN copy of the text
+ *   - append grows the array by exactly one; the item lands at the end
+ *   - out-of-range / absent lookups report "not present"
+ *   - object set-then-get returns the value that was set
+ *   - deleting the root frees the whole nested tree (exercised for crash/UB;
+ *     exactly-once freeing is proven by the ownership system at compile time)
+ *
+ * main() is UNSAFE C on purpose: it drives the _Safe API the way a real C
+ * caller would; the ownership guarantees under test live in the library.
+ */
+#include "cjson.hbs"
+#include <stdio.h>
+#include <string.h>
+
+static int failed = 0;
+
+static void check(int ok, const char *what) {
+    if (!ok) {
+        printf("FAIL %s\n", what);
+        failed = 1;
+    } else {
+        printf("ok   %s\n", what);
+    }
+}
+
+int main(void) {
+    /* string keeps its own copy (R: caller's buffer may go away) */
+    char buf[16];
+    strcpy(buf, "hello");
+    JSON_Value *_Owned _Nonnull name = cJSON_CreateString(buf);
+    strcpy(buf, "XXXXX");
+    check(strcmp((const char *)cJSON_GetString(&_Const *name), "hello") == 0,
+          "string value keeps its own copy of the text");
+
+    /* array: append moves the item in; size grows by one each time */
+    JSON_Value *_Owned _Nonnull arr = cJSON_CreateArray();
+    check(cJSON_ArraySize(&_Const *arr) == 0, "new array is empty");
+    cJSON_ArrayAppend(&_Mut *arr, cJSON_CreateNumber(1.0));
+    cJSON_ArrayAppend(&_Mut *arr, cJSON_CreateNumber(2.0));
+    cJSON_ArrayAppend(&_Mut *arr, cJSON_CreateNumber(40.0));
+    check(cJSON_ArraySize(&_Const *arr) == 3, "size grew by one per append");
+    const JSON_Value *_Borrow _Nullable last = cJSON_ArrayGet(&_Const *arr, 2);
+    check(last != 0 && cJSON_IsNumber(last) && cJSON_GetNumber(last) == 40.0,
+          "appended item is at the new last position");
+    check(cJSON_ArrayGet(&_Const *arr, 99) == 0, "out-of-range lookup is not-present");
+
+    /* object: set then look up; absent key reports not-present */
+    JSON_Value *_Owned _Nonnull root = cJSON_CreateObject();
+    cJSON_ObjectAdd(&_Mut *root, "name", name);   /* root takes the string in   */
+    cJSON_ObjectAdd(&_Mut *root, "nums", arr);    /* root takes the array in    */
+    check(cJSON_ObjectHas(&_Const *root, "name"), "set key is present");
+    const JSON_Value *_Borrow _Nullable got = cJSON_ObjectGet(&_Const *root, "name");
+    check(got != 0 && cJSON_IsString(got)
+          && strcmp((const char *)cJSON_GetString(got), "hello") == 0,
+          "lookup returns the value that was set");
+    check(cJSON_ObjectGet(&_Const *root, "missing") == 0, "absent key is not-present");
+
+    /* deleting the root frees the whole nested tree */
+    cJSON_Delete(root);
+
+    if (failed) {
+        printf("SMOKE FAIL\n");
+        return 1;
+    }
+    printf("SMOKE PASS\n");
+    return 0;
+}

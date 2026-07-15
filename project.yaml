@@ -23,6 +23,8 @@ paths:
   # a prebuilt clang (ENABLE_BSC); -fsyntax-only, no build needed. machine-specific.
   bsc_clang:  ~/bsd/llvm-project-dup/build/bin/clang
   libcbs_src: ~/bsd/llvm-project-dup/libcbs/src   # root of the BSC stdlib headers
+  scripts:    scripts                            # pack scripts (test harness runner)
+  examples:   examples                           # feature fixtures (smoke tests)
   data_root:  run                                # pack-local runtime cache (gitignored)
 
 tools:
@@ -118,7 +120,11 @@ params:
                 "-I", "{paths.libcbs_src}/hash", "-I", "{paths.libcbs_src}/map",
                 "-I", "{paths.libcbs_src}/list", "-I", "{paths.libcbs_src}/raw_vec",
                 "-I", "{paths.libcbs_src}/raw_table", "{file}"]
-  # behavior floor: the target project's test command (run after a green compile).
-  test_cmd: ["ninja", "-C", "{paths.repo}/build", "check-bsc-sdd"]
+  # behavior floor: compile the GENERATED module + the feature's smoke test
+  # into a real binary and run it ({worktree} = this task's worktree, resolved
+  # by verify.test). Fully configuration: swap the script/smoke per feature.
+  test_cmd: ["{paths.scripts}/run_tests.sh", "{worktree}",
+             "{paths.examples}/cjson/smoke.cbs",
+             "{paths.bsc_clang}", "{paths.libcbs_src}"]
   # budget guard on every agent.run step (runaway guard + context.json manifest).
   max_context_bytes: 300000

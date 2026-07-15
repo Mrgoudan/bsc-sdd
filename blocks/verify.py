@@ -80,9 +80,13 @@ def verify_record_req(ctx, task, prev):
 @block("verify.test", "state", {"pass", "fail", "error", "timeout"},
        required_params={"cmd", "repo"})
 def verify_test(ctx, task, prev):
-    """Run the target's tests — the sound floor for behavior logic."""
+    """Run the target's tests — the sound floor for behavior logic. The
+    generated code lives in THIS task's worktree, so `{worktree}` templates to
+    the same deterministic path the codegen blocks use."""
     conn = ctx["_conn"]
-    cmd = [template(a, {}) for a in ctx["cmd"]]
+    worktree = str(Path(ctx["_workspaces_dir"])
+                   / ("task-%d-a%d" % (task["id"], task["attempts"])))
+    cmd = [template(a, {"worktree": worktree}) for a in ctx["cmd"]]
     code, out, err = run_cmd(cmd, ctx["_timeout_s"], Path(ctx["_step_dir"]),
                              tools=ctx.get("_tools"))
     if code == 0:
