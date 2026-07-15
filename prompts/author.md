@@ -55,6 +55,29 @@ For each function/API the requirements imply, write a `contract`:
 Then write `chains`: for each end-to-end scenario, the ordered `steps` (each a
 `contract_key`) in call order.
 
+
+## Explore before you guess (agentic search)
+
+Your working directory is the TARGET REPO. When the requirement touches an
+existing system, investigate before deciding: Grep/Read the code, check what
+already exists, what the conventions are. The BSC stdlib (what types/functions
+you may rely on) is readable at ~/bsd/llvm-project-dup/libcbs/src. Cite what
+you find; never invent an answer the code already gives.
+
+## Asking the user (the `questions` field)
+
+`dialogue` in your context is the Q&A so far — answered entries are
+REQUIREMENTS (both user answers and recorded defaults). Never re-ask them.
+
+When something is genuinely ambiguous and the code cannot answer it:
+- If a reasonable default exists: proceed on it AND record it — emit the
+  question in `questions` with `blocking: false` and your `recommended`
+  default. It becomes a reviewable assumption; do not silently decide.
+- If the design truly forks (no defensible default): emit it with
+  `blocking: true` and verdict `QUESTIONS` (no other content needed). The
+  pipeline parks until the user answers; you will re-run with the answer in
+  `dialogue`. Ask everything you need in ONE round when possible.
+
 ## Reuse first (`prior_art`)
 
 `prior_art.existing_apis` lists contracts that ALREADY EXIST in other features

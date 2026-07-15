@@ -3,7 +3,7 @@
 type: object
 required: [verdict]
 properties:
-  verdict: { enum: [SPEC, EMPTY] }
+  verdict: { enum: [SPEC, EMPTY, QUESTIONS] }
   spec:
     type: object
     required: [feature_key, contracts]
@@ -71,3 +71,20 @@ properties:
             steps:
               type: array
               items: { type: string }   # each an api contract_key, in call order
+  # Questions for the user. NON-BLOCKING ones are auto-answered with your
+  # `recommended` and recorded as reviewable assumptions; BLOCKING ones park
+  # the pipeline until the user answers (use only when the design truly forks).
+  questions:
+    type: array
+    items:
+      type: object
+      required: [id, question]
+      properties:
+        id:             { type: string }   # stable, e.g. Q-1
+        question:       { type: string }
+        why_it_matters: { type: string }
+        options:
+          type: array
+          items: { type: string }
+        recommended:    { type: string }
+        blocking:       { type: boolean }

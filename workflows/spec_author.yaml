@@ -8,7 +8,7 @@
 # the actual code, where the compiler + tests can be sound.
 workflow: spec_author
 consumes: [spec.requested]
-emits: [spec.validated, spec.rejected]
+emits: [spec.validated, spec.rejected, spec.questions]
 
 steps:
   - name: decompose                  # prose requirement -> atomic, ID'd items,
@@ -16,19 +16,30 @@ steps:
     llm: decompose
     schema: requirements_result
     max_visits: 2                    # one retry, driven by the fidelity gate
-    params: { max_context_bytes: "{pack.max_context_bytes}" }
+    params:
+      max_context_bytes: "{pack.max_context_bytes}"
+      cwd: "{paths.repo}"            # agentic search: explore the target repo
     timeout_s: 1800
     context:
       - payload                      # the raw requirement text + feature key
       - requirements                 # previous R-* list (keep ids stable on a re-run)
+      - dialogue                     # the Q&A so far (multi-turn memory)
       - decompose_feedback           # on a retry: the fidelity gate's findings
     outcomes:
-      REQS: persist_reqs
+      REQS: ask_d
+      QUESTIONS: ask_d
       EMPTY: rejected
       agent_limit: parked
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
+
+  - name: ask_d                      # Q&A router: record assumptions, or park
+    block: spec.ask                  # on blocking questions until answered
+    params: { stage: decompose }     # (scripts/answer.py or the board unparks)
+    max_visits: 2
+    timeout_s: 30
+    outcomes: { proceed: persist_reqs, waiting: parked }
 
   - name: persist_reqs               # stable-key reconcile of the R-* items
     block: reqs.load
@@ -58,19 +69,30 @@ steps:
     block: agent.run                 # ownership sigs, behavior assertions, and a
     llm: author                      # `fulfills` trace to the R-* items).
     schema: spec_result
-    params: { max_context_bytes: "{pack.max_context_bytes}" }
+    params:
+      max_context_bytes: "{pack.max_context_bytes}"
+      cwd: "{paths.repo}"            # agentic search while designing
     timeout_s: 1800
     context:
       - payload                      # the requirement text + feature key
       - requirements                 # the decomposed R-* items to cover + trace
+      - dialogue                     # the Q&A so far (answers are requirements)
       - prior_art                    # reuse-first: existing APIs (other features) + design idioms
     outcomes:
-      SPEC: persist
+      SPEC: ask_a
+      QUESTIONS: ask_a
       EMPTY: rejected
       agent_limit: parked
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
+
+  - name: ask_a                      # Q&A router for the design stage
+    block: spec.ask
+    params: { stage: author }
+    max_visits: 2
+    timeout_s: 30
+    outcomes: { proceed: persist, waiting: parked }
 
   - name: persist                    # stage specs/contracts/assertions/chains
     block: spec.load                 # rows from the agent's IR (never commits;

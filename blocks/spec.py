@@ -113,6 +113,53 @@ def reqs_load(ctx, task, prev):
                                 "kept": len(seen) - len(added) - len(changed)}}
 
 
+@block("spec.ask", "state", {"proceed", "waiting"}, required_params={"stage"})
+def spec_ask(ctx, task, prev):
+    """The Q&A router — how ambiguity stops resolving silently. The agent's
+    result may carry `questions`; each is either:
+      - non-blocking: auto-answered with the agent's `recommended` and recorded
+        as an ASSUMPTION (answered_by='default') — reviewable, overridable;
+      - blocking: recorded unanswered; if any remain unanswered, emit
+        spec.questions and route 'waiting' (the workflow parks). The user
+        answers (scripts/answer.py or the board) and unparks; the agent re-runs
+        with the whole dialogue in context and may ask follow-ups (multi-turn).
+    'proceed' passes the agent's result through untouched for the next step."""
+    conn = ctx["_conn"]
+    fk = (task.get("payload") or {}).get("feature_key")
+    stage = ctx["stage"]
+    questions = (prev or {}).get("questions") or []
+    recorded = 0
+    for q in questions:
+        qk, text = q.get("id"), q.get("question")
+        if not qk or not text:
+            continue
+        conn.execute(
+            "INSERT OR IGNORE INTO dialogue(feature_key, stage, q_key, question,"
+            " why, options, recommended, blocking) VALUES (?,?,?,?,?,?,?,?)",
+            (fk, stage, qk, text, q.get("why_it_matters"),
+             json.dumps(q.get("options") or []), q.get("recommended"),
+             1 if q.get("blocking") else 0))
+        recorded += 1
+    # assumptions: non-blocking + still unanswered -> take the recommendation
+    conn.execute(
+        "UPDATE dialogue SET answer=recommended, answered_by='default',"
+        " answered_at=datetime('now') WHERE feature_key=? AND stage=? AND"
+        " blocking=0 AND answer IS NULL AND recommended IS NOT NULL",
+        (fk, stage))
+    open_qs = [dict(r) for r in conn.execute(
+        "SELECT q_key, question, why, options, recommended FROM dialogue"
+        " WHERE feature_key=? AND stage=? AND answer IS NULL", (fk, stage))]
+    if open_qs:
+        return "waiting", {
+            "open_questions": open_qs, "stage": stage,
+            "_staged": [{"op": "emit_event", "name": "spec.questions",
+                         "payload": {"feature_key": fk, "stage": stage,
+                                     "questions": open_qs}}]}
+    out = dict(prev or {})
+    out["assumptions_recorded"] = recorded
+    return "proceed", out
+
+
 @block("spec.load", "state", {"ok", "empty"})
 def spec_load(ctx, task, prev):
     """INCREMENTAL reconcile of the IR into the DB — the heart of progressive

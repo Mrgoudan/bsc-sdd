@@ -171,6 +171,28 @@ CREATE VIEW IF NOT EXISTS green_bodies AS
     JOIN contracts c  ON c.spec_id = s.id AND c.contract_key = u.contract_key
     WHERE u.status = 'done' AND u.body IS NOT NULL;
 
+-- The requirement dialogue: questions the spec-side agents raised, and their
+-- answers. Multi-turn: an agent re-runs with the full history in context and
+-- may ask follow-ups. answered_by='default' rows are ASSUMPTIONS (the agent
+-- proceeded on its recommended option — reviewable, overridable);
+-- answered_by='user' rows are decisions. Rendered into spec.yaml.
+CREATE TABLE IF NOT EXISTS dialogue (
+    id            INTEGER PRIMARY KEY,
+    feature_key   TEXT NOT NULL,
+    stage         TEXT NOT NULL,                   -- decompose | author
+    q_key         TEXT NOT NULL,                   -- agent's id, e.g. Q-1
+    question      TEXT NOT NULL,
+    why           TEXT,                            -- why it matters
+    options       TEXT,                            -- JSON list of choices
+    recommended   TEXT,
+    blocking      INTEGER NOT NULL DEFAULT 0,
+    answer        TEXT,                            -- NULL = awaiting the user
+    answered_by   TEXT,                            -- default | user
+    asked_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    answered_at   TEXT,
+    UNIQUE (feature_key, stage, q_key)
+);
+
 -- Error->fix memory: when a function goes red then GREEN, record the error it
 -- hit and the body that fixed it. The fix_hints provider retrieves the closest
 -- past lesson when a NEW function hits a similar error — the pipeline learns

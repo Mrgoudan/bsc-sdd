@@ -38,6 +38,22 @@ def render(db, feature):
     if sp["goal"]:
         L.append("goal: %s" % _q(sp["goal"]))
 
+    # the requirement dialogue: user decisions + recorded assumptions
+    drows = c.execute("SELECT stage, q_key, question, answer, answered_by, blocking"
+                      " FROM dialogue WHERE feature_key=? ORDER BY id",
+                      (feature,)).fetchall()
+    if drows:
+        L.append("dialogue:")
+        for r in drows:
+            L.append("  - id: %s" % _q("%s/%s" % (r["stage"], r["q_key"])))
+            L.append("    question: %s" % _q(r["question"]))
+            if r["answer"] is None:
+                L.append("    status: OPEN (blocking=%s)" % bool(r["blocking"]))
+            else:
+                L.append("    answer: %s" % _q(r["answer"]))
+                L.append("    decided_by: %s" % _q(
+                    "user" if r["answered_by"] == "user" else "assumption (default)"))
+
     # the decomposed requirements (the coverage/trace targets)
     reqrows = c.execute("SELECT req_key, kind, text FROM requirements"
                         " WHERE feature_key=? ORDER BY id", (feature,)).fetchall()

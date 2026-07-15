@@ -177,6 +177,23 @@ def _prior_art(env, task, spec):
             "design_idioms": [p for _, p in _idf_rank(qtext, idiom_docs, 3)]}
 
 
+@context_provider("dialogue")
+def _dialogue(env, task, spec):
+    """The requirement Q&A so far — the multi-turn memory. Answered rows are
+    DECISIONS (answered_by='user') or ASSUMPTIONS (='default'); treat both as
+    requirements. Unanswered blocking rows are still open. Never re-ask an
+    answered question."""
+    fk = _feature_key(task)
+    if not fk:
+        return []
+    return [{"stage": r["stage"], "id": r["q_key"], "question": r["question"],
+             "answer": r["answer"], "answered_by": r["answered_by"],
+             "blocking": bool(r["blocking"])}
+            for r in env.conn.execute(
+                "SELECT stage, q_key, question, answer, answered_by, blocking"
+                " FROM dialogue WHERE feature_key=? ORDER BY id", (fk,))]
+
+
 @context_provider("decompose_feedback")
 def _decompose_feedback(env, task, spec):
     """On a decompose retry after the fidelity gate (reqs_check) failed: the
