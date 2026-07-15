@@ -107,6 +107,12 @@ def reqs_load(ctx, task, prev):
     removed = sorted(set(old) - seen)
     for k in removed:
         conn.execute("DELETE FROM requirements WHERE feature_key=? AND req_key=?", (fk, k))
+    # stamp the doc THIS decomposition covered — requirement_delta anchors here,
+    # so the next run's diff is doc-vs-what-was-actually-decomposed.
+    doc = (task.get("payload") or {}).get("requirement")
+    if doc:
+        conn.execute("INSERT OR REPLACE INTO watermarks(scope, cursor) VALUES (?,?)",
+                     ("reqs.doc.%s" % fk, doc))
     return "ok", {"feature_key": fk, "req_count": len(seen),
                   "reconcile": {"added": added, "changed": changed,
                                 "removed": removed,

@@ -18,7 +18,9 @@ not rubber-stamp:
    from what the raw text says (e.g. raw says "may be absent", item says
    "returns an error").
 
-Judge meaning, not wording — a faithful paraphrase is fine. `out_of_scope`
+**If `requirement_delta` is present**: walk the diff FIRST. Every added line
+must map to an item — a new clause with no item is a `missing` finding, no
+matter how complete the rest looks. Judge meaning, not wording — a faithful paraphrase is fine. `out_of_scope`
 items must correspond to exclusions actually stated in the raw text.
 
 `verdict: FAIL` if you find ANY of the three; list each in `findings` with the

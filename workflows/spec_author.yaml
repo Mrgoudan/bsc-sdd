@@ -23,6 +23,7 @@ steps:
     context:
       - payload                      # the raw requirement text + feature key
       - requirements                 # previous R-* list (keep ids stable on a re-run)
+      - requirement_delta            # EXACT doc diff since last run (never drop new clauses)
       - dialogue                     # the Q&A so far (multi-turn memory)
       - decompose_feedback           # on a retry: the fidelity gate's findings
     outcomes:
@@ -57,6 +58,7 @@ steps:
     context:
       - payload                      # the raw requirement (the ground truth)
       - requirements                 # the persisted R-* list under judgment
+      - requirement_delta            # doc diff: every ADDED line must have a home
     outcomes:
       PASS: author
       FAIL: decompose                # re-decompose with the findings; visit caps

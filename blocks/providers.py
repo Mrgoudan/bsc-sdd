@@ -177,6 +177,30 @@ def _prior_art(env, task, spec):
             "design_idioms": [p for _, p in _idf_rank(qtext, idiom_docs, 3)]}
 
 
+@context_provider("requirement_delta")
+def _requirement_delta(env, task, spec):
+    """The DETERMINISTIC diff between the stored requirement (last run) and the
+    incoming one. Anchoring defense: an agent re-decomposing with its previous
+    list in context tends to REPRODUCE it and silently drop new clauses (it
+    happened live: a new last-write-wins clause vanished and the fidelity gate
+    false-PASSed). Never ask a model to spot a diff — hand it the diff."""
+    import difflib
+    fk = _feature_key(task)
+    new = (task.get("payload") or {}).get("requirement")
+    if not fk or not new:
+        return None
+    row = env.conn.execute("SELECT cursor FROM watermarks WHERE scope=?",
+                           ("reqs.doc.%s" % fk,)).fetchone()
+    if not row:                                   # legacy fallback
+        row = env.conn.execute("SELECT requirement FROM specs WHERE feature_key=?",
+                               (fk,)).fetchone()
+    if not row or not row[0] or row[0] == new:
+        return None
+    diff = list(difflib.unified_diff(row[0].splitlines(), new.splitlines(),
+                                     "previous", "current", lineterm=""))
+    return {"changed": True, "diff": "\n".join(diff[:400])}
+
+
 @context_provider("current_spec")
 def _current_spec(env, task, spec):
     """THIS feature's existing spec, in full (a re-run aid): the author must

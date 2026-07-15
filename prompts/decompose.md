@@ -35,6 +35,10 @@ When something is genuinely ambiguous and the code cannot answer it:
   about the implementation. Avoid vague motivation ("should be safe") — turn it
   into the concrete guarantees that make it true.
 - **Stable ids.** Number them `R-1`, `R-2`, … in reading order. Never renumber.
+  **If `requirement_delta` is present, the document CHANGED since your last
+  decomposition.** Every ADDED line in the diff must be decomposed into new or
+  updated items — the previous list does NOT cover them; reproducing it
+  verbatim is the failure mode. Removed lines retire their items.
   If your context includes a previous `requirements` list (this is a re-run),
   KEEP each unchanged item's existing `req_key` verbatim; give only genuinely
   new items new keys. Downstream traces key on these ids.

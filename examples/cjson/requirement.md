@@ -61,6 +61,10 @@ themselves be arrays or objects, to any depth.
 
 - **Add** a value under a string key. The object takes the value in, and keeps
   its **own copy** of the key.
+- Adding under a key the object **already has** (matching exactly, by case)
+  **replaces** that member's value — **last write wins**. The object never
+  holds two members with the same exact key, and the replaced value is
+  disposed of safely.
 - **Look up** a member by key. There are two lookups: a **default** one that
   matches keys **ignoring letter case**, and a **case-sensitive** one that
   matches keys exactly. Either yields the member's value, or **nothing** if no
@@ -86,6 +90,8 @@ caller can keep building inside it.
 - Building a nested object/array and then deleting the root cleans up
   completely: every node is freed exactly once — nothing leaks, nothing is freed
   twice, nothing is touched after being freed.
+- Adding twice under the same exact key leaves ONE member, and looking the key
+  up returns the value from the **second** add (last write wins).
 - After appending to an array, its size is exactly one greater, and the new item
   is the one found at the last position.
 - After adding a key to an object, looking that key up returns the value that
