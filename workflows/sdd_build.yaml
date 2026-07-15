@@ -185,5 +185,5 @@ steps:
     timeout_s: 10
     params:
       name: sdd.blocked
-      data: { feature_key: "{payload.feature_key}", at: "{prev._step}" }
+      data: { feature_key: "{payload.feature_key}" }
     outcomes: { ok: done }

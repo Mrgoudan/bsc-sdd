@@ -44,4 +44,11 @@ if [ -f "$FF_ROOT/state/forgeflow.db" ]; then
   python3 "$PACK_DIR/scripts/migrate_db.py" --db "$FF_ROOT/state/forgeflow.db"
 fi
 
+# one daemon per root: a second `run` would reset the live daemon's running
+# tasks as "orphans" and race its walks. flock makes the second start a no-op.
+export PYTHONUNBUFFERED=1                 # daemon logs flush line-by-line
+if [ "${1:-}" = "run" ]; then
+  exec flock -n "$FF_ROOT/daemon.lock" python3 -m forgeflow --root "$FF_ROOT" --pack "$PACK_DIR" "$@" \
+    || { echo "another daemon already holds $FF_ROOT/daemon.lock"; exit 1; }
+fi
 exec python3 -m forgeflow --root "$FF_ROOT" --pack "$PACK_DIR" "$@"

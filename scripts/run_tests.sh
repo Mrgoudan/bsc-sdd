@@ -18,7 +18,11 @@ INCS+=("-I" "$(dirname "$CBS")")          # the generated .hbs lives beside the 
 
 OUT="$WORKTREE/.smoke"
 mkdir -p "$OUT"
+# link every libcbs impl TU — String etc. are not header-only
+IMPLS=()
+while IFS= read -r f; do IMPLS+=("$f"); done < <(find "$LIBCBS" -name "*.cbs" | sort)
 "$CLANG" -Wno-nullability-completeness "${INCS[@]}" \
-    "$CBS" "$SMOKE" "$LIBCBS/bishengc_safety/bishengc_safety.cbs" \
+    "$CBS" "$SMOKE" "${IMPLS[@]}" \
+    -lpthread -lm \
     -o "$OUT/smoke_bin"
 exec "$OUT/smoke_bin"
