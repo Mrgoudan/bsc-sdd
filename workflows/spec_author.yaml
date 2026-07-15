@@ -115,6 +115,7 @@ steps:
     timeout_s: 10                    # feature_key; base rides through for the
     params:                          # worktree. (spec.requested must carry base.)
       name: spec.validated
+      force: true                    # a re-validated spec must RE-trigger the build
       data: { feature_key: "{payload.feature_key}", base: "{payload.base}" }
     outcomes: { ok: done }
 

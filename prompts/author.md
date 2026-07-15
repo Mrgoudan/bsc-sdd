@@ -81,7 +81,7 @@ When something is genuinely ambiguous and the code cannot answer it:
 ## Re-runs: keep unchanged contracts VERBATIM (`current_spec`)
 
 If `current_spec` is present, this is a revision of an existing spec. Contracts
-the requirement change does NOT affect must be re-emitted **byte-identical**
+the requirement change does NOT affect must be re-emitted **byte-identical** — and `contract_key` values are IDENTITY, never style: copy every existing key EXACTLY as it appears in `current_spec` (prefix included); renaming a key is treated as deleting one contract and inventing another
 (same signature, summary, assertions, calls, fulfills — copy them from
 `current_spec`). Only contracts genuinely touched by the change may differ.
 The pipeline diffs by content hash: gratuitous rewording forces pointless

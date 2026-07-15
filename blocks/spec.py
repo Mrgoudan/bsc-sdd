@@ -192,13 +192,29 @@ def spec_load(ctx, task, prev):
 
     existing = {r[0]: (r[1], r[2], r[3]) for r in conn.execute(   # ck -> (id, hash, sig)
         "SELECT contract_key, id, hash, signature FROM contracts WHERE spec_id=?", (spec_id,))}
+    # rename safety net (the reqs.load lesson, applied to contracts): a
+    # contract's SIGNATURE is its identity. If the author restyles a key but
+    # the signature matches an unclaimed old contract, keep the OLD key —
+    # otherwise a cosmetic rename would torch every done codegen unit.
+    incoming_keys = {c.get("contract_key") for c in contracts}
+    sig_to_oldkey = {}
+    for ok, (_id, _h, sig) in existing.items():
+        if ok not in incoming_keys:
+            sig_to_oldkey.setdefault(" ".join((sig or "").split()), ok)
     new_keys, added, changed = set(), [], []
+    renamed = {}
     sig_changed = False
 
     for c in contracts:
         ck = c.get("contract_key")
         if not ck or not c.get("signature"):
             continue
+        if ck not in existing:
+            old = sig_to_oldkey.pop(" ".join(c["signature"].split()), None)
+            if old:
+                renamed[ck] = old
+                ck = old
+                c = dict(c, contract_key=old)
         new_keys.add(ck)
         h = _contract_hash(c)
         if ck in existing:
@@ -247,6 +263,7 @@ def spec_load(ctx, task, prev):
 
     return "ok", {"spec": spec, "spec_id": spec_id,
                   "reconcile": {"added": added, "changed": changed, "removed": removed,
+                                "renamed": renamed,
                                 "unchanged": len(new_keys) - len(added) - len(changed),
                                 "sig_changed": sig_changed}}
 
