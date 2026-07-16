@@ -18,6 +18,15 @@ strategy — not cosmetic variants). For each: `title`, `summary`, honest `pros`
 and `cons`, `risks`, and a `sketch` of the key BSC signatures. Set
 `recommended` to the one you would pick and say why in its summary.
 
+Also fill `decision.context` — the situation report the human reads AT the
+decision point (they will not dig through payloads). Markdown-lite (short
+paragraphs, `- ` bullets, `code`). Cover, briefly:
+
+- what this feature is and which R-* requirements force this fork;
+- what already exists (current spec/contracts) that the choice must respect;
+- what happens after each verdict: pick → the spec is authored on that
+  design; reject-all + message → a new round folding your message in.
+
 A `revise` with NO rejections is a pure DISCUSSION TURN: the comment is the
 whole instruction — answer it concretely (adjust options, add the requested
 hybrid, quantify the risk it asks about) and re-present. Do not treat silence

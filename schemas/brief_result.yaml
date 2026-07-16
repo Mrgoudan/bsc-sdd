@@ -12,7 +12,12 @@ properties:
     properties:
       title: { type: string }       # the question being decided
       kind:  { enum: [proposal] }
-      body:  { type: string }       # context: what forks and why it matters
+      body:  { type: string }       # one line: what forks and why it matters
+      context: { type: string }     # markdown-lite SITUATION REPORT rendered
+                                    # at the decision point: which requirements
+                                    # (R-*) drive this fork, what exists today,
+                                    # what each verdict causes downstream. The
+                                    # human decides from THIS — no digging.
       recommended: { type: string } # option title you would pick
       options:
         type: array
