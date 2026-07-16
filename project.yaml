@@ -42,6 +42,12 @@ concurrency:
     build: 1            # BSC compile of the target: one at a time
     llm: 3              # concurrent codegen / author agent calls
 
+# ping when the pipeline needs a human (decision gate / blocking questions):
+# appends to run/notifications.log and tries a desktop notification.
+notify:
+  decision.requested: [scripts/notify.sh]
+  spec.questions:     [scripts/notify.sh]
+
 # the board: daemon-served dashboard at http://127.0.0.1:8791 (loopback-only,
 # no token needed; SSH-tunnel it from another machine).
 http: { host: 127.0.0.1, port: 8791 }
@@ -104,6 +110,7 @@ corpora:
 prompts:
   decompose: prompts/decompose.md  # requirement prose -> atomic ID'd requirements
   reqcheck: prompts/reqcheck.md   # fidelity gate: raw requirement <-> R-* items
+  brief:   prompts/brief.md       # design fork? 2-4 options, or SKIP
   author:  prompts/author.md      # requirements -> spec IR (with fulfills trace)
   skeleton: prompts/skeleton.md   # module interface (.hbs + .cbs head), once
   genfn:   prompts/genfn.md       # ONE function body against the skeleton
@@ -113,6 +120,7 @@ prompts:
 schemas:
   requirements_result: schemas/requirements_result.yaml
   reqs_verdict:     schemas/reqs_verdict.yaml
+  brief_result:     schemas/brief_result.yaml
   spec_result:      schemas/spec_result.yaml
   skeleton_result:  schemas/skeleton_result.yaml
   function_result:  schemas/function_result.yaml
@@ -124,6 +132,8 @@ agents:
   decompose: { backend: claude-cli, model: GLM-5.2,
                env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   reqcheck: { backend: claude-cli, model: GLM-5.2,
+              env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
+  brief:    { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   author:   { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }

@@ -1,0 +1,30 @@
+# The design-brief agent's output: either SKIP (no genuine fork — established
+# design or one sane approach) or OPTIONS carrying a proposal `decision` for
+# the human gate. verdict enum values become routable outcomes.
+type: object
+required: [verdict]
+properties:
+  verdict: { enum: [OPTIONS, SKIP] }
+  why_skipped: { type: string }     # when SKIP: one line of justification
+  decision:
+    type: object
+    required: [title, options]
+    properties:
+      title: { type: string }       # the question being decided
+      kind:  { enum: [proposal] }
+      body:  { type: string }       # context: what forks and why it matters
+      recommended: { type: string } # option title you would pick
+      options:
+        type: array
+        minItems: 2
+        maxItems: 4
+        items:
+          type: object
+          required: [title, summary]
+          properties:
+            title:   { type: string }
+            summary: { type: string }
+            pros:    { type: array, items: { type: string } }
+            cons:    { type: array, items: { type: string } }
+            risks:   { type: string }
+            sketch:  { type: string }   # key signatures / structure sketch

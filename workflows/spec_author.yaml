@@ -60,12 +60,47 @@ steps:
       - requirements                 # the persisted R-* list under judgment
       - requirement_delta            # doc diff: every ADDED line must have a home
     outcomes:
-      PASS: author
+      PASS: design_brief
       FAIL: decompose                # re-decompose with the findings; visit caps
       agent_limit: parked            # bound the loop (2nd FAIL -> budget exhausted)
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
+
+  - name: design_brief               # a REAL fork? offer 2-4 options with
+    block: agent.run                 # pros/cons/risks/sketches; SKIP when the
+    llm: brief                       # design is established or obvious — a
+    schema: brief_result             # routine change must not stall on ceremony.
+    max_visits: 4
+    params:
+      max_context_bytes: "{pack.max_context_bytes}"
+      cwd: "{paths.repo}"
+    timeout_s: 1800
+    context:
+      - payload
+      - requirements
+      - design_rounds                # the thread so far: rejections are DEAD
+      - current_spec                 # established design => SKIP
+      - prior_art
+    outcomes:
+      OPTIONS: design_gate
+      SKIP: author
+      agent_limit: parked
+      agent_backend: parked
+      agent_invalid: parked
+      timeout: parked
+
+  - name: design_gate                # THE HUMAN GATE: verdicts are edges.
+    block: human.ask                 # picked -> author (choice rides as state);
+    max_visits: 8                    # revise -> next brief round (rejection
+    timeout_s: 30                    # memory); reframe -> the decomposition
+    params: { key: "{payload.feature_key}/design" }
+    outcomes:
+      picked: author
+      revise: design_brief
+      reframe: decompose
+      abandon: rejected
+      awaiting_human: parked
 
   - name: author                     # requirements -> spec IR (contracts w/ BSC
     block: agent.run                 # ownership sigs, behavior assertions, and a
@@ -79,6 +114,7 @@ steps:
       - payload                      # the requirement text + feature key
       - requirements                 # the decomposed R-* items to cover + trace
       - dialogue                     # the Q&A so far (answers are requirements)
+      - design_choice                # the design the human picked — HONOR IT
       - current_spec                 # existing contracts: re-emit unchanged ones VERBATIM
       - prior_art                    # reuse-first: existing APIs (other features) + design idioms
     outcomes:

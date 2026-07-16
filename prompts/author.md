@@ -78,6 +78,12 @@ When something is genuinely ambiguous and the code cannot answer it:
   pipeline parks until the user answers; you will re-run with the answer in
   `dialogue`. Ask everything you need in ONE round when possible.
 
+## The chosen design (`design_choice`)
+
+If `design_choice` is present, a human picked that architecture from the
+design brief. It is a DECISION, not a suggestion: follow its module split,
+data model, and signature sketch. Deviating from it is a defect.
+
 ## Re-runs: keep unchanged contracts VERBATIM (`current_spec`)
 
 If `current_spec` is present, this is a revision of an existing spec. Contracts

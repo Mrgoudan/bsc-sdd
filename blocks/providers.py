@@ -201,6 +201,45 @@ def _requirement_delta(env, task, spec):
     return {"changed": True, "diff": "\n".join(diff[:400])}
 
 
+@context_provider("design_rounds")
+def _design_rounds(env, task, spec):
+    """The design decision's full thread (engine decisions table): every round's
+    options, verdict, rejections, and comments. Rejection memory — a re-proposal
+    must address, not re-offer, what the user turned down."""
+    fk = _feature_key(task)
+    if not fk:
+        return []
+    out = []
+    for r in env.conn.execute(
+            "SELECT round, status, verdict, options, answer FROM decisions"
+            " WHERE key=? ORDER BY round", ("%s/design" % fk,)):
+        out.append({"round": r["round"], "status": r["status"],
+                    "verdict": r["verdict"],
+                    "options": json.loads(r["options"] or "[]"),
+                    "answer": json.loads(r["answer"] or "{}")})
+    return out
+
+
+@context_provider("design_choice")
+def _design_choice(env, task, spec):
+    """The design the human PICKED (latest resolved picked round) — the author
+    must honor it. None when the brief skipped (no fork) or nothing resolved."""
+    fk = _feature_key(task)
+    if not fk:
+        return None
+    r = env.conn.execute(
+        "SELECT options, answer FROM decisions WHERE key=? AND verdict='picked'"
+        " ORDER BY round DESC LIMIT 1", ("%s/design" % fk,)).fetchone()
+    if not r:
+        return None
+    picked = (json.loads(r["answer"] or "{}")).get("picked")
+    for o in json.loads(r["options"] or "[]"):
+        name = o.get("title") if isinstance(o, dict) else o
+        if name == picked:
+            return {"picked": picked, "option": o}
+    return {"picked": picked} if picked else None
+
+
 @context_provider("current_spec")
 def _current_spec(env, task, spec):
     """THIS feature's existing spec, in full (a re-run aid): the author must
