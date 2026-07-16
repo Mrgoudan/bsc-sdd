@@ -60,6 +60,9 @@ http: { host: 127.0.0.1, port: 8791 }
 
 # pack panels for the engine board (read-only SELECTs, generic widgets):
 board:
+  # one raw request = one run: feature_key threads every task/decision of a
+  # request together; the board draws each thread as one pipeline graph.
+  thread_key: feature_key
   overview_panels:
     - title: open questions (answer via ./run-bsc-sdd.sh answer)
       kind: table
