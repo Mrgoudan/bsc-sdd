@@ -1,0 +1,15 @@
+# fn_route — resolve a function-edit request to its owning feature.
+#
+# The "change this function" form lives on the FUNCTION view, which knows
+# only the contract_key. This one-step workflow looks up the owning feature
+# and re-emits with feature_key, so the real edit task threads into its run
+# on the board (thread_key: feature_key).
+workflow: fn_route
+consumes: [fn.edit.requested]
+emits: [fn.edit.routed]
+
+steps:
+  - name: route
+    block: codegen.edit_route
+    timeout_s: 30
+    outcomes: { ok: done, missing: failed }

@@ -58,3 +58,11 @@ When something is genuinely ambiguous and the code cannot answer it:
 ## Output
 
 `requirements: [{req_key, text, kind}]`. Return only the JSON object.
+
+## Edit requests
+
+If the payload carries `edit_request`, a human ordered a change from the
+function-edit path (it needed an interface revision). Treat it as an
+authoritative instruction: if it changes BEHAVIOR, fold it into the R-items
+(add/adjust); if it is implementation-only (naming, signatures), the R-items
+usually stay untouched — do not invent behavior the doc does not state.

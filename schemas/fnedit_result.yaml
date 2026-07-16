@@ -1,0 +1,36 @@
+# The fn-edit agent's output: a new BODY that fits the frozen interface, or
+# an INTERFACE verdict carrying the decision the human must make before the
+# full pipeline runs. verdict enum values become routable outcomes.
+type: object
+required: [verdict]
+properties:
+  verdict: { enum: [FUNCTION, INTERFACE, EMPTY] }
+  # FUNCTION: the edited body (complete function definition, frozen signature)
+  body: { type: string }
+  summary: { type: string }         # one line: what changed and why it's safe
+  # INTERFACE: the edit cannot fit the frozen signature/assertions
+  decision:
+    type: object
+    required: [title, options]
+    properties:
+      title: { type: string }       # e.g. "Editing cJSON_GetArrayItem needs an interface change"
+      kind:  { enum: [question] }
+      body:  { type: string }       # one line: why the frozen interface blocks it
+      context: { type: string }     # markdown-lite situation report: the
+                                    # instruction, WHICH part of the interface
+                                    # it breaks (signature/assertion), what the
+                                    # full revision will touch (ripple estimate)
+      recommended: { type: string }
+      options:
+        type: array
+        minItems: 1
+        maxItems: 2
+        items:
+          type: object
+          required: [title, summary]
+          properties:
+            title:   { type: string }
+            summary: { type: string }
+            pros:    { type: array, items: { type: string } }
+            cons:    { type: array, items: { type: string } }
+            risks:   { type: string }

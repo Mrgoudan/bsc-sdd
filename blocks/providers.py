@@ -452,3 +452,40 @@ def _assertions(env, task, spec):
         " WHERE feature_key=? AND body IS NOT NULL", (fk,)))
     return [{"contract_key": ck, "impl": (bodies.get(ck) or "")[:4000] or None,
              "assertions": asserts} for ck, asserts in grouped.items()]
+
+
+@context_provider("current_body")
+def _current_body(env, task, spec):
+    """The function under EDIT: its current generated body (what the user is
+    asking to change), attempts, and last compile error. Keyed by
+    payload.contract_key — the fn_edit workflow's target."""
+    fk = _feature_key(task)
+    ck = (task.get("payload") or {}).get("contract_key")
+    if not fk or not ck:
+        return None
+    r = env.conn.execute(
+        "SELECT body, attempts, last_error, status FROM codegen_units"
+        " WHERE feature_key=? AND contract_key=?", (fk, ck)).fetchone()
+    if not r:
+        return None
+    return {"contract_key": ck, "status": r["status"], "attempts": r["attempts"],
+            "body": r["body"], "last_error": (r["last_error"] or "")[:2000] or None}
+
+
+@context_provider("edit_rounds")
+def _edit_rounds(env, task, spec):
+    """The fn-edit decision thread (revision memory): every gate round's
+    verdict + the user's comment. A revise comment is an instruction the next
+    edit attempt must fold in."""
+    fk = _feature_key(task)
+    ck = (task.get("payload") or {}).get("contract_key")
+    if not fk or not ck:
+        return []
+    out = []
+    for r in env.conn.execute(
+            "SELECT round, status, verdict, answer FROM decisions"
+            " WHERE key=? ORDER BY round", ("%s/fn-edit/%s" % (fk, ck),)):
+        out.append({"round": r["round"], "status": r["status"],
+                    "verdict": r["verdict"],
+                    "answer": json.loads(r["answer"] or "{}")})
+    return out

@@ -107,3 +107,10 @@ are vetted ownership patterns; prefer their shapes when choosing signatures.
 - Keep assertions about *module-internal state and values*, module-qualified.
 - Every chain step must be a declared contract.
 - Prefer extending existing modules to inventing new ones.
+
+## Edit requests
+
+If the payload carries `edit_request`, a human ordered this revision from the
+function-edit path: honor it in the spec — change EXACTLY the contracts it
+touches (signature/assertions/calls), keep everything else verbatim. The
+reconcile will ripple only what you actually changed.

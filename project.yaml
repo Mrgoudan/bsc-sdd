@@ -82,6 +82,18 @@ board:
         - { name: requirement, label: "requirement — file path or the full text",
             kind: path_or_text, required: true }
         - { name: base, label: base branch, default: main }
+    # "ask AI to change this function" — lives on the function view; the
+    # contract key rides in hidden ({key} = the view's entity). Body-only
+    # edits skip the spec ceremony; interface-touching edits surface a
+    # decision, and only a picked verdict runs the whole pipeline.
+    - title: ask AI to change this function
+      event: fn.edit.requested
+      on_view: function
+      fields:
+        - { name: contract_key, kind: hidden, default: "{key}", required: true }
+        - { name: instruction, label: what should change, kind: textarea,
+            required: true }
+        - { name: base, label: base branch, default: main }
   # entity pages (/view/<name>?key=...): click a requirement or a function
   # anywhere on the board and see EVERYTHING related to it. link:<view>
   # column aliases are the cross-links.
@@ -186,6 +198,7 @@ prompts:
   genfn:   prompts/genfn.md       # ONE function body against the skeleton
   behavior: prompts/behavior.md   # LLM behavior-logic check over structured assertions
   conform: prompts/conformance.md # impl -> req conformance (the outer envelope)
+  fnedit:  prompts/fnedit.md      # surgical single-function edit (or INTERFACE verdict)
 
 schemas:
   requirements_result: schemas/requirements_result.yaml
@@ -196,6 +209,7 @@ schemas:
   function_result:  schemas/function_result.yaml
   behavior_verdict: schemas/behavior_verdict.yaml
   conformance_result: schemas/conformance_result.yaml
+  fnedit_result:    schemas/fnedit_result.yaml
 
 agents:
   # GLM behind the agentic claude CLI (so the bsc-* skills + worktree work).
@@ -214,6 +228,8 @@ agents:
   behavior: { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   conform:  { backend: claude-cli, model: GLM-5.2,
+              env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
+  fnedit:   { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
 
 params:

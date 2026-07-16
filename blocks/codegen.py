@@ -267,3 +267,89 @@ def codegen_retry_gate(ctx, task, prev):
                      "attempts": row[1] if row else 0,
                      "summary": (meta[0] if meta else "") or "",
                      "signature": (meta[1] if meta else "") or ""}
+
+
+# ------------------------------------------------------------ surgical edits
+#
+# "Ask AI to change this function." The dividing line is the FROZEN INTERFACE
+# (the contract hash's world): a body-only change re-enters the per-function
+# loop (gen -> compile -> smoke) with no spec ceremony; a change that cannot
+# fit the frozen signature/assertions surfaces as a human decision, and only
+# a picked verdict escalates into the full requirement->spec->build pipeline.
+
+@block("codegen.edit_route", "state", {"ok", "missing"})
+def codegen_edit_route(ctx, task, prev):
+    """fn.edit.requested carries only {contract_key, instruction} (the form
+    lives on the function view, which knows no feature). Resolve the owning
+    feature and re-emit fn.edit.routed WITH feature_key, so the edit task
+    threads into its run on the board."""
+    import time
+    conn = ctx["_conn"]
+    payload = task.get("payload") or {}
+    ck = payload.get("contract_key")
+    instruction = (payload.get("instruction") or "").strip()
+    if not ck or not instruction:
+        return "missing", {"error": "need contract_key + instruction"}
+    r = conn.execute(
+        "SELECT s.feature_key FROM contracts c JOIN specs s ON s.id = c.spec_id"
+        " WHERE c.contract_key=? AND c.status='active' LIMIT 1", (ck,)).fetchone()
+    if not r:
+        return "missing", {"error": "no active contract '%s'" % ck}
+    data = {"feature_key": r[0], "contract_key": ck,
+            "instruction": instruction,
+            "base": payload.get("base") or "main",
+            "_force": time.time_ns()}          # a click IS intent: never dedup
+    return "ok", {"feature_key": r[0],
+                  "_staged": [{"op": "emit_event", "name": "fn.edit.routed",
+                               "payload": data}]}
+
+
+@block("codegen.edit_target", "state", {"ok", "missing"})
+def codegen_edit_target(ctx, task, prev):
+    """Arm the edit: the target function's unit becomes the ACTIVE cursor
+    (the existing write_fn/compile/mark_done loop then operates on it),
+    attempts reset so the edit gets a fresh per-function retry budget."""
+    conn = ctx["_conn"]
+    fk = _fk(task)
+    ck = (task.get("payload") or {}).get("contract_key")
+    u = conn.execute("SELECT status FROM codegen_units WHERE feature_key=?"
+                     " AND contract_key=?", (fk, ck)).fetchone()
+    if not u:
+        return "missing", {"error": "no codegen unit for '%s' (feature never"
+                                    " built?)" % ck}
+    busy = conn.execute(
+        "SELECT contract_key FROM codegen_units WHERE feature_key=?"
+        " AND status='active' AND contract_key!=?", (fk, ck)).fetchone()
+    if busy:
+        return "missing", {"error": "another unit is active (%s) — a build is"
+                                    " in flight; edit after it lands" % busy[0]}
+    conn.execute("UPDATE codegen_units SET status='active', attempts=0,"
+                 " last_error=NULL WHERE feature_key=? AND contract_key=?",
+                 (fk, ck))
+    return "ok", {"contract_key": ck}
+
+
+@block("codegen.escalate", "state", {"ok", "missing"})
+def codegen_escalate(ctx, task, prev):
+    """The human confirmed the interface must change: hand the WHOLE run back
+    to the full pipeline. Re-emits spec.requested with the stored requirement
+    plus the edit instruction (edit_request) — decompose/fidelity keep the
+    R-items honest, the author folds the change into the spec, reconcile
+    ripples only what actually changed. Also release the armed unit."""
+    import time
+    conn = ctx["_conn"]
+    fk = _fk(task)
+    payload = task.get("payload") or {}
+    r = conn.execute("SELECT requirement FROM specs WHERE feature_key=?",
+                     (fk,)).fetchone()
+    if not r:
+        return "missing", {"error": "no spec for feature '%s'" % fk}
+    conn.execute("UPDATE codegen_units SET status='done' WHERE feature_key=?"
+                 " AND contract_key=? AND status='active'",
+                 (fk, payload.get("contract_key")))
+    data = {"feature_key": fk, "requirement": r[0],
+            "base": payload.get("base") or "main",
+            "edit_request": payload.get("instruction") or "",
+            "_force": time.time_ns()}
+    return "ok", {"_staged": [{"op": "emit_event", "name": "spec.requested",
+                               "payload": data}]}
