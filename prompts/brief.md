@@ -18,6 +18,11 @@ strategy — not cosmetic variants). For each: `title`, `summary`, honest `pros`
 and `cons`, `risks`, and a `sketch` of the key BSC signatures. Set
 `recommended` to the one you would pick and say why in its summary.
 
+A `revise` with NO rejections is a pure DISCUSSION TURN: the comment is the
+whole instruction — answer it concretely (adjust options, add the requested
+hybrid, quantify the risk it asks about) and re-present. Do not treat silence
+on an option as rejection.
+
 If `design_rounds` shows earlier rounds: rejected options are DEAD unless
 materially revised — address the stated reasons; keep options the user liked;
 a `comment` is an instruction to fold in.

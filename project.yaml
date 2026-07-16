@@ -49,7 +49,13 @@ notify:
   spec.questions:     [scripts/notify.sh]
 
 # the board: daemon-served dashboard at http://127.0.0.1:8791 (loopback-only,
-# no token needed; SSH-tunnel it from another machine).
+# no token needed; SSH-tunnel it from another machine:
+#   ssh -N -L 8791:127.0.0.1:8791 <box>
+# to expose directly instead, bind beyond loopback WITH a token — the engine
+# refuses a non-loopback bind without one:
+#   http: { host: 0.0.0.0, port: 8791, token_ref: BOARD }
+#   + HTTP_TOKEN_BOARD=... in the secrets file; requests then need
+#   Authorization: Bearer <token>).
 http: { host: 127.0.0.1, port: 8791 }
 
 # pack panels for the engine board (read-only SELECTs, generic widgets):

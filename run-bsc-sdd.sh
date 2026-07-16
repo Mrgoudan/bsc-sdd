@@ -52,6 +52,10 @@ if [ "${1:-}" = "questions" ]; then
   shift
   exec python3 "$PACK_DIR/scripts/answer.py" --db "$FF_ROOT/state/forgeflow.db" "$@"
 fi
+if [ "${1:-}" = "discuss" ]; then
+  shift
+  exec "$PACK_DIR/scripts/discuss.sh" "$@"
+fi
 if [ "${1:-}" = "answer" ]; then
   shift
   ARGS=()
