@@ -73,10 +73,71 @@ board:
       sql: "SELECT checker, target, verdict, CASE sound WHEN 1 THEN 'sound'
             ELSE 'argued' END AS basis, at FROM verifications
             ORDER BY id DESC LIMIT 12"
+  # start a run from the board: paste the requirement (path or text), click.
+  launch:
+    - title: start a feature run
+      event: spec.requested
+      fields:
+        - { name: feature_key, label: "feature key (e.g. CJSON-P2)", required: true }
+        - { name: requirement, label: "requirement — file path or the full text",
+            kind: path_or_text, required: true }
+        - { name: base, label: base branch, default: main }
+  # entity pages (/view/<name>?key=...): click a requirement or a function
+  # anywhere on the board and see EVERYTHING related to it. link:<view>
+  # column aliases are the cross-links.
+  views:
+    requirement:
+      title: "requirement {key}"
+      panels:
+        - title: the requirement
+          kind: table
+          sql: "SELECT req_key, kind, text, feature_key FROM requirements
+                WHERE req_key = :key ORDER BY id DESC LIMIT 1"
+        - title: fulfilled by
+          kind: table
+          sql: "SELECT c.contract_key AS 'link:function', c.signature, c.status
+                FROM contracts c JOIN contract_fulfills f ON f.contract_id = c.id
+                WHERE f.req_key = :key AND c.status = 'active' ORDER BY c.contract_key"
+        - title: verification trail
+          kind: table
+          sql: "SELECT v.checker, v.target, v.verdict,
+                CASE v.sound WHEN 1 THEN 'sound' ELSE 'argued' END AS basis, v.at
+                FROM verifications v JOIN contract_fulfills f ON f.contract_id = v.contract_id
+                WHERE f.req_key = :key ORDER BY v.id DESC LIMIT 15"
+    function:
+      title: "function {key}"
+      panels:
+        - title: contract
+          kind: table
+          sql: "SELECT contract_key, module, signature, summary, impl_file
+                FROM contracts WHERE contract_key = :key AND status = 'active'"
+        - title: fulfills requirements
+          kind: table
+          sql: "SELECT f.req_key AS 'link:requirement', r.text
+                FROM contracts c JOIN contract_fulfills f ON f.contract_id = c.id
+                LEFT JOIN requirements r ON r.req_key = f.req_key
+                WHERE c.contract_key = :key AND c.status = 'active'
+                ORDER BY f.req_key"
+        - title: behavior assertions
+          kind: table
+          sql: "SELECT a.kind, a.text, a.discharged_by
+                FROM contract_assertions a JOIN contracts c ON c.id = a.contract_id
+                WHERE c.contract_key = :key AND c.status = 'active' ORDER BY a.seq"
+        - title: generated body
+          kind: table
+          sql: "SELECT status, attempts, body FROM codegen_units
+                WHERE contract_key = :key"
+        - title: verification trail
+          kind: table
+          sql: "SELECT v.checker, v.target, v.verdict,
+                CASE v.sound WHEN 1 THEN 'sound' ELSE 'argued' END AS basis, v.at
+                FROM verifications v JOIN contracts c ON c.id = v.contract_id
+                WHERE c.contract_key = :key ORDER BY v.id DESC LIMIT 15"
   task_panels:
-    - title: functions
+    - title: functions (click one for everything about it)
       kind: status_grid
-      sql: "SELECT contract_key AS label, status, attempts
+      sql: "SELECT contract_key AS label, status, attempts,
+            contract_key AS 'link:function'
             FROM codegen_units WHERE feature_key = :fk ORDER BY seq"
       params: { fk: feature_key }
     - title: dialogue (this feature)
