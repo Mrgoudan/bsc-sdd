@@ -173,7 +173,7 @@ def spec_load(ctx, task, prev):
     contract_key + content hash:
       - unchanged  -> left alone (its done codegen unit + body survive)
       - changed    -> updated; its codegen unit invalidated (-> pending)
-      - added      -> inserted (a pending unit is seeded in sdd_build)
+      - added      -> inserted (a pending unit is seeded in code_gen)
       - removed    -> dropped, with its codegen unit
     A signature change ripples through the interface, so it dirties the skeleton
     and re-pends every unit (coarse but correct; the compiler catches callers).

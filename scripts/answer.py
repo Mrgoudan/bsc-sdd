@@ -7,7 +7,7 @@ List the questions the pipeline is waiting on, answer them, and resume:
   answer.py --db ... --feature CJSON-P1 --set Q-1=replace
   answer.py --db ... --feature CJSON-P1 --accept-defaults             # take all recommendations
 
-Answering the last open blocking question UNPARKS the waiting spec_author task
+Answering the last open blocking question UNPARKS the waiting plan task
 (fresh attempt): the agent re-runs with the full dialogue in its context and
 either proceeds or asks follow-ups — that is the multi-turn loop.
 
@@ -91,15 +91,15 @@ def main():
         except ImportError:
             sys.exit("answers recorded; set PYTHONPATH to the engine to auto-unpark")
         row = conn.execute(
-            "SELECT id FROM tasks WHERE kind='spec_author' AND state='parked'"
+            "SELECT id FROM tasks WHERE kind='plan' AND state='parked'"
             " AND payload LIKE ? ORDER BY id DESC LIMIT 1",
             ('%"feature_key": "' + a.feature + '"%',)).fetchone()
         if row:
             queue.unpark(conn, task_id=row["id"])
             conn.commit()
-            print("unparked spec_author task %d — the daemon resumes it" % row["id"])
+            print("unparked plan task %d — the daemon resumes it" % row["id"])
         else:
-            print("no parked spec_author task found (nothing waiting on answers)")
+            print("no parked plan task found (nothing waiting on answers)")
 
 
 if __name__ == "__main__":

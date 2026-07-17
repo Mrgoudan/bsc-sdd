@@ -1,12 +1,12 @@
-# spec_author — requirement -> spec IR -> validate.
+# plan — requirement -> spec IR -> validate (the FIRST step of a normal run).
 #
 # Produces the IR (contracts + structured assertions + chains) from a plain
 # requirement, then runs the DETERMINISTIC structural checks (ids unique, refs
 # resolve, chain steps resolve to contracts, impl_files present). No proving
 # here — this only guarantees the spec is well-formed, exactly like SpecLang's
-# mechanical validator. Semantic/behavior checking happens in sdd_build against
+# mechanical validator. Semantic/behavior checking happens in code_gen against
 # the actual code, where the compiler + tests can be sound.
-workflow: spec_author
+workflow: plan
 consumes: [spec.requested]
 emits: [spec.validated, spec.rejected, spec.questions]
 
@@ -149,7 +149,7 @@ steps:
     outcomes: { ok: announce, broken: rejected }   # DESIGN before any codegen.
 
   - name: announce                   # hand-off carries the KEYS, not the IR:
-    block: event.emit                # sdd_build reads the spec from the DB by
+    block: event.emit                # code_gen reads the spec from the DB by
     timeout_s: 10                    # feature_key; base rides through for the
     params:                          # worktree. (spec.requested must carry base.)
       name: spec.validated

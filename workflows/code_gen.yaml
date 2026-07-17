@@ -1,4 +1,4 @@
-# sdd_build — validated spec -> BiSheng C -> verify.
+# code_gen — validated spec -> BiSheng C -> verify.
 #
 # The verification model, step by step:
 #   compile  = the SOUND gate. A green BSC compile proves the safety column
@@ -7,7 +7,7 @@
 #   test     = the behavior floor (runs the code, sound per case).
 #   behavior = the LLM residual: the value/state predicates the compiler can't
 #              see, checked over the STRUCTURED assertion slot (Z3-swappable).
-workflow: sdd_build
+workflow: code_gen
 consumes: [spec.validated]
 emits: [sdd.completed, sdd.blocked]
 

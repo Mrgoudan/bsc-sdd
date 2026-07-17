@@ -90,11 +90,11 @@ corpus, and every red-then-green fight records a `fix_lessons` row.
 
 ## Pipeline (`workflows/`)
 
-- **`spec_author`** — `spec.requested` → **`decompose`** (prose → `R-*`) →
+- **`plan`** — `spec.requested` → **`decompose`** (prose → `R-*`) →
   `reqs.load` → author the IR (with `fulfills`) → `spec.load` →
   `spec.validate` (structural checks **+ coverage gate**, deterministic, *not* a
   proof) → emits `spec.validated`.
-- **`sdd_build`** — `spec.validated` → `codegen.plan` (units = modules) →
+- **`code_gen`** — `spec.validated` → `codegen.plan` (units = modules) →
   worktree → `codegen` → `codegen.write` → **`verify.compile`** (sound gate;
   `red` → back to `codegen` with the errors, capped) → `verify.test` →
   `behavior` (LLM residual) → `conformance` (impl→req) → emits
