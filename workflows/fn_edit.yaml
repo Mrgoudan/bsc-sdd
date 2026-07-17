@@ -12,7 +12,7 @@ consumes: [fn.edit.routed]
 emits: [fn.edited, fn.edit.blocked, spec.requested]
 
 steps:
-  - name: target                     # arm the unit: it becomes the ACTIVE
+  - name: arm_target                     # arm the unit: it becomes the ACTIVE
     block: codegen.edit_target       # cursor of the standard per-function
     timeout_s: 30                    # loop; attempts reset (fresh budget).
     outcomes: { ok: workspace, missing: blocked }
@@ -26,9 +26,9 @@ steps:
   - name: rehydrate                  # restore skeleton + every done body, so
     block: codegen.rehydrate         # the edited function compiles against
     timeout_s: 60                    # the real module, not a stub.
-    outcomes: { ok: edit, empty: blocked }
+    outcomes: { ok: edit_function, empty: blocked }
 
-  - name: edit                       # the one agent call: new body (frozen
+  - name: edit_function                       # the one agent call: new body (frozen
     block: agent.run                 # signature) or INTERFACE + the decision
     llm: fnedit                      # for the human gate.
     schema: fnedit_result
@@ -44,15 +44,15 @@ steps:
       - fix_hints: { k: 2 }          # past (same error -> fixed body) lessons
       - edit_rounds                  # gate thread: revise comments to fold in
     outcomes:
-      FUNCTION: write_fn
-      INTERFACE: gate
+      FUNCTION: write_function
+      INTERFACE: interface_gate
       EMPTY: blocked
       agent_limit: parked
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
 
-  - name: write_fn                   # REPLACES the body, rebuilds the module
+  - name: write_function                   # REPLACES the body, rebuilds the module
     block: codegen.write_fn
     max_visits: 8
     timeout_s: 30
@@ -77,28 +77,28 @@ steps:
     max_visits: 8
     params: { cap: 3 }
     timeout_s: 10
-    outcomes: { retry: edit, giveup: blocked }
+    outcomes: { retry: edit_function, giveup: blocked }
 
   - name: mark_done                  # green -> unit done (+ fix_lesson if it
     block: codegen.mark_done         # fought the compiler)
     timeout_s: 30
-    outcomes: { ok: test }
+    outcomes: { ok: smoke_test }
 
-  - name: test                       # behavior floor: the feature's smoke test
+  - name: smoke_test                       # behavior floor: the feature's smoke test
     block: verify.test               # still passes with the edited body.
     timeout_s: 1800
     params: { cmd: "{pack.test_cmd}", repo: "{paths.repo}" }
     outcomes: { pass: announce, fail: blocked, error: blocked, timeout: parked }
 
-  - name: gate                       # THE HUMAN GATE for interface-touching
+  - name: interface_gate                       # THE HUMAN GATE for interface-touching
     block: human.ask                 # edits: picked -> full pipeline; a revise
     max_visits: 6                    # comment sends the agent back with the
     timeout_s: 30                    # instruction refined; abandon stops.
     params: { key: "{payload.feature_key}/fn-edit/{payload.contract_key}" }
     outcomes:
       picked: escalate
-      revise: edit
-      reframe: edit
+      revise: edit_function
+      reframe: edit_function
       abandon: blocked
       awaiting_human: parked
 

@@ -12,7 +12,7 @@ consumes: [spec.validated]
 emits: [sdd.completed, sdd.blocked]
 
 steps:
-  - name: plan                       # units = modules (functions in a module
+  - name: plan_modules                       # units = modules (functions in a module
     block: codegen.plan              # share the struct/helpers -> generated
     timeout_s: 30                    # together). Single module = one loop below.
     outcomes: { ok: workspace, empty: done }
@@ -26,9 +26,9 @@ steps:
   - name: need_skeleton              # first run / signature change -> build the
     block: codegen.need_skeleton     # skeleton; a plain modification -> reuse the
     timeout_s: 10                    # cached one (restore the worktree from DB).
-    outcomes: { build: skeleton, reuse: rehydrate }
+    outcomes: { build: gen_skeleton, reuse: rehydrate }
 
-  - name: skeleton                   # the module interface, ONCE: .hbs (struct +
+  - name: gen_skeleton                   # the module interface, ONCE: .hbs (struct +
     block: agent.run                 # EVERY declaration) + .cbs preamble. Frozen,
     llm: skeleton                    # so per-function codegen stays consistent.
     schema: skeleton_result
@@ -38,14 +38,14 @@ steps:
       - payload
       - spec_slice                   # all the module's contracts (signatures)
     outcomes:
-      SKELETON: skel_write
+      SKELETON: write_skeleton
       EMPTY: blocked
       agent_limit: parked
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
 
-  - name: skel_write                 # persist skeleton + write .hbs / .cbs-head
+  - name: write_skeleton                 # persist skeleton + write .hbs / .cbs-head
     block: codegen.skel_write
     timeout_s: 30
     outcomes: { ok: seed_units, empty: blocked }
@@ -53,21 +53,21 @@ steps:
   - name: rehydrate                  # modification: restore the fresh worktree
     block: codegen.rehydrate         # from the DB (cached .hbs + done bodies), so
     timeout_s: 60                    # the loop re-gens only the pending units.
-    outcomes: { ok: seed_units, empty: skeleton }
+    outcomes: { ok: seed_units, empty: gen_skeleton }
 
   - name: seed_units                 # one pending unit per function
     block: codegen.seed_units
     timeout_s: 30
-    outcomes: { ok: next_fn, empty: blocked }
+    outcomes: { ok: next_function, empty: blocked }
 
   # --- the per-function loop: gen one function, compile it, next (or regenerate) ---
-  - name: next_fn                    # cursor: next pending function -> active,
+  - name: next_function                    # cursor: next pending function -> active,
     block: codegen.next_fn           # or 'done' once every function is green.
     max_visits: 400                  # visited ~once per function (+ loop-backs)
     timeout_s: 30
-    outcomes: { next: gen_fn, done: test }
+    outcomes: { next: gen_function, done: smoke_test }
 
-  - name: gen_fn                     # ONE function body against the frozen
+  - name: gen_function                     # ONE function body against the frozen
     block: agent.run                 # skeleton — small context (no whole-file
     llm: genfn                       # timeout); a red localizes to this function.
     schema: function_result
@@ -87,14 +87,14 @@ steps:
           filter: { feature_key: "{payload.feature_key}" }
           k: 1
     outcomes:
-      FUNCTION: write_fn
+      FUNCTION: write_function
       EMPTY: blocked
       agent_limit: parked
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
 
-  - name: write_fn                   # store the body; rebuild .cbs from all bodies
+  - name: write_function                   # store the body; rebuild .cbs from all bodies
     block: codegen.write_fn          # (a regenerate REPLACES, never appends)
     max_visits: 400
     timeout_s: 30
@@ -119,21 +119,21 @@ steps:
     max_visits: 400
     params: { cap: 3 }
     timeout_s: 10
-    outcomes: { retry: gen_fn, giveup: blocked }
+    outcomes: { retry: gen_function, giveup: blocked }
 
   - name: mark_done                  # this function is green -> advance the cursor
     block: codegen.mark_done
     max_visits: 400
     timeout_s: 30
-    outcomes: { ok: next_fn }
+    outcomes: { ok: next_function }
 
-  - name: test                       # behavior floor: run the target's tests
+  - name: smoke_test                       # behavior floor: run the target's tests
     block: verify.test
     timeout_s: 1800
     params: { cmd: "{pack.test_cmd}", repo: "{paths.repo}" }
-    outcomes: { pass: behavior, fail: blocked, error: behavior, timeout: behavior }
+    outcomes: { pass: behavior_check, fail: blocked, error: behavior_check, timeout: behavior_check }
 
-  - name: behavior                   # LLM residual: value/state predicates the
+  - name: behavior_check                   # LLM residual: value/state predicates the
     block: agent.run                 # compiler can't see, over the STRUCTURED
     llm: behavior                    # assertion slot (swap to Z3 later).
     schema: behavior_verdict
@@ -143,14 +143,14 @@ steps:
       - payload
       - assertions                   # this spec's behavior pre/post (text+formal)
     outcomes:
-      PASS: conformance
+      PASS: conformance_check
       FAIL: blocked
       agent_limit: parked
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
 
-  - name: conformance                # impl -> req: does the code fulfill each
+  - name: conformance_check                # impl -> req: does the code fulfill each
     block: agent.run                 # atomic requirement? (the outer envelope,
     llm: conform                     # scoped per-requirement by the trace)
     schema: conformance_result
@@ -160,14 +160,14 @@ steps:
       - payload
       - req_trace                    # each requirement + its fulfilling contracts/code
     outcomes:
-      PASS: record_req
-      FAIL: record_req               # record either way; the row carries the verdict
+      PASS: record_verdicts
+      FAIL: record_verdicts               # record either way; the row carries the verdict
       agent_limit: parked
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
 
-  - name: record_req                 # write the impl->req verdicts as verifications
+  - name: record_verdicts                 # write the impl->req verdicts as verifications
     block: verify.record_req         # (blocks if any requirement is violated)
     timeout_s: 30
     outcomes: { ok: announce, failed: blocked }

@@ -290,11 +290,11 @@ def _dialogue(env, task, spec):
 
 @context_provider("decompose_feedback")
 def _decompose_feedback(env, task, spec):
-    """On a decompose retry after the fidelity gate (reqs_check) failed: the
+    """On a decompose retry after the fidelity gate (fidelity_check) failed: the
     gate's findings (missing / invented / distorted items), so the re-decompose
     fixes exactly those instead of starting over. None on the first pass."""
     row = env.conn.execute(
-        "SELECT result FROM task_steps WHERE task_id=? AND step='reqs_check'"
+        "SELECT result FROM task_steps WHERE task_id=? AND step='fidelity_check'"
         " AND outcome='FAIL' ORDER BY at DESC LIMIT 1", (task.get("id"),)).fetchone()
     if not row or not row[0]:
         return None

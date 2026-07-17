@@ -1,4 +1,4 @@
-# plan — requirement -> spec IR -> validate (the FIRST step of a normal run).
+# plan — requirement -> spec IR -> validate_spec (the FIRST step of a normal run).
 #
 # Produces the IR (contracts + structured assertions + chains) from a plain
 # requirement, then runs the DETERMINISTIC structural checks (ids unique, refs
@@ -27,15 +27,15 @@ steps:
       - dialogue                     # the Q&A so far (multi-turn memory)
       - decompose_feedback           # on a retry: the fidelity gate's findings
     outcomes:
-      REQS: ask_d
-      QUESTIONS: ask_d
+      REQS: req_questions
+      QUESTIONS: req_questions
       EMPTY: rejected
       agent_limit: parked
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
 
-  - name: ask_d                      # Q&A router: record assumptions, or park
+  - name: req_questions                      # Q&A router: record assumptions, or park
     block: spec.ask                  # on blocking questions until answered
     params: { stage: decompose }     # (scripts/answer.py or the board unparks)
     max_visits: 2
@@ -46,9 +46,9 @@ steps:
     block: reqs.load
     max_visits: 2
     timeout_s: 30
-    outcomes: { ok: reqs_check, empty: rejected }
+    outcomes: { ok: fidelity_check, empty: rejected }
 
-  - name: reqs_check                 # FIDELITY GATE: do the R-* items faithfully
+  - name: fidelity_check                 # FIDELITY GATE: do the R-* items faithfully
     block: agent.run                 # capture the RAW request? (missing/invented/
     llm: reqcheck                    # distorted). The one gate that cannot be
     schema: reqs_verdict             # sound — so it is disprove-first + retried.
@@ -84,25 +84,25 @@ steps:
       - prior_art
     outcomes:
       OPTIONS: design_gate
-      SKIP: author
+      SKIP: write_spec
       agent_limit: parked
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
 
   - name: design_gate                # THE HUMAN GATE: verdicts are edges.
-    block: human.ask                 # picked -> author (choice rides as state);
+    block: human.ask                 # picked -> write_spec (choice rides as state);
     max_visits: 8                    # revise -> next brief round (rejection
     timeout_s: 30                    # memory); reframe -> the decomposition
     params: { key: "{payload.feature_key}/design" }
     outcomes:
-      picked: author
+      picked: write_spec
       revise: design_brief
       reframe: decompose
       abandon: rejected
       awaiting_human: parked
 
-  - name: author                     # requirements -> spec IR (contracts w/ BSC
+  - name: write_spec                     # requirements -> spec IR (contracts w/ BSC
     block: agent.run                 # ownership sigs, behavior assertions, and a
     llm: author                      # `fulfills` trace to the R-* items).
     schema: spec_result
@@ -118,27 +118,27 @@ steps:
       - current_spec                 # existing contracts: re-emit unchanged ones VERBATIM
       - prior_art                    # reuse-first: existing APIs (other features) + design idioms
     outcomes:
-      SPEC: ask_a
-      QUESTIONS: ask_a
+      SPEC: spec_questions
+      QUESTIONS: spec_questions
       EMPTY: rejected
       agent_limit: parked
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
 
-  - name: ask_a                      # Q&A router for the design stage
+  - name: spec_questions                      # Q&A router for the design stage
     block: spec.ask
     params: { stage: author }
     max_visits: 2
     timeout_s: 30
-    outcomes: { proceed: persist, waiting: parked }
+    outcomes: { proceed: persist_spec, waiting: parked }
 
-  - name: persist                    # stage specs/contracts/assertions/chains
+  - name: persist_spec                    # stage specs/contracts/assertions/chains
     block: spec.load                 # rows from the agent's IR (never commits;
     timeout_s: 30                    # engine applies staged ops at the boundary).
-    outcomes: { ok: validate, empty: rejected }
+    outcomes: { ok: validate_spec, empty: rejected }
 
-  - name: validate                   # deterministic structural checks + coverage
+  - name: validate_spec                   # deterministic structural checks + coverage
     block: spec.validate             # gate over the IR. NOT a proof.
     timeout_s: 30
     outcomes: { ok: design_check, invalid: rejected }
