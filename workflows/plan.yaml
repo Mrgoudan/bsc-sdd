@@ -146,7 +146,13 @@ steps:
   - name: design_check               # MECHANICAL join gate: every new-and-direct
     block: design.check              # call's qualifier handoff must be compatible.
     timeout_s: 30                    # Deterministic; catches an inconsistent
-    outcomes: { ok: announce, broken: rejected }   # DESIGN before any codegen.
+    outcomes: { ok: write_docs, broken: rejected } # DESIGN before any codegen.
+
+  - name: write_docs                 # spec.md (WHAT) + design.md (HOW) —
+    block: docs.render               # projections of the DB, regenerated at
+    timeout_s: 30                    # every milestone; never hand-edited.
+    params: { out_dir: "{paths.data_root}/docs" }
+    outcomes: { ok: announce, empty: rejected }
 
   - name: announce                   # hand-off carries the KEYS, not the IR:
     block: event.emit                # code_gen reads the spec from the DB by

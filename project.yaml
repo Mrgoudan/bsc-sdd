@@ -167,6 +167,7 @@ blocks:
   - blocks/codegen.py       # codegen.plan (fan-out units), codegen.write (emit .cbs into worktree)
   - blocks/verify.py        # verify.compile (BSC build = SOUND gate), verify.test (behavior floor)
   - blocks/providers.py     # spec_slice / contracts / assertions context providers (payload optimization)
+  - blocks/docs.py          # docs.render — spec.md (WHAT) + design.md (HOW), projected from the DB
 
 # The pack's own IR + verification tables (engine core ships only generic ones).
 schema:

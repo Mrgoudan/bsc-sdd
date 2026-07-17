@@ -170,7 +170,13 @@ steps:
   - name: record_verdicts                 # write the impl->req verdicts as verifications
     block: verify.record_req         # (blocks if any requirement is violated)
     timeout_s: 30
-    outcomes: { ok: announce, failed: blocked }
+    outcomes: { ok: write_docs, failed: blocked }
+
+  - name: write_docs                 # refresh spec.md/design.md with the
+    block: docs.render               # verification trail of this build.
+    timeout_s: 30
+    params: { out_dir: "{paths.data_root}/docs" }
+    outcomes: { ok: announce, empty: blocked }
 
   - name: announce
     block: event.emit

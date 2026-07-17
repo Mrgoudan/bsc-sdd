@@ -88,7 +88,13 @@ steps:
     block: verify.test               # still passes with the edited body.
     timeout_s: 1800
     params: { cmd: "{pack.test_cmd}", repo: "{paths.repo}" }
-    outcomes: { pass: announce, fail: blocked, error: blocked, timeout: parked }
+    outcomes: { pass: write_docs, fail: blocked, error: blocked, timeout: parked }
+
+  - name: write_docs                 # refresh the docs' verification trail
+    block: docs.render               # after a surgical edit.
+    timeout_s: 30
+    params: { out_dir: "{paths.data_root}/docs" }
+    outcomes: { ok: announce, empty: blocked }
 
   - name: interface_gate                       # THE HUMAN GATE for interface-touching
     block: human.ask                 # edits: picked -> full pipeline; a revise
