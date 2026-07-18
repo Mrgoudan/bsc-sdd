@@ -15,6 +15,9 @@ steps:
     block: agent.run                 # BEFORE the spec, so coverage is independent
     llm: decompose
     schema: requirements_result
+    resumable: true                  # a RETRY reuses the recorded result — same
+                                     # inputs resume cheap; changed inputs use
+                                     # the revise path and re-derive
     max_visits: 2                    # one retry, driven by the fidelity gate
     params:
       max_context_bytes: "{pack.max_context_bytes}"
@@ -52,6 +55,7 @@ steps:
     block: agent.run                 # capture the RAW request? (missing/invented/
     llm: reqcheck                    # distorted). The one gate that cannot be
     schema: reqs_verdict             # sound — so it is disprove-first + retried.
+    resumable: true
     max_visits: 2
     params: { max_context_bytes: "{pack.max_context_bytes}" }
     timeout_s: 1800
@@ -71,6 +75,7 @@ steps:
     block: agent.run                 # pros/cons/risks/sketches; SKIP when the
     llm: brief                       # design is established or obvious — a
     schema: brief_result             # routine change must not stall on ceremony.
+    resumable: true
     max_visits: 4
     params:
       max_context_bytes: "{pack.max_context_bytes}"
@@ -106,7 +111,8 @@ steps:
     block: agent.run                 # ownership sigs, behavior assertions, and a
     llm: author                      # `fulfills` trace to the R-* items).
     schema: spec_result
-    max_visits: 4                    # the design_check 'broken' loop re-enters here
+    resumable: true                  # retries reuse the spec; repairs go through
+    max_visits: 2                    # the DEDICATED fix_joins path, not here
     params:
       max_context_bytes: "{pack.max_context_bytes}"
       cwd: "{paths.repo}"            # agentic search while designing
@@ -118,7 +124,6 @@ steps:
       - design_choice                # the design the human picked — HONOR IT
       - current_spec                 # existing contracts: re-emit unchanged ones VERBATIM
       - prior_art                    # reuse-first: existing APIs (other features) + design idioms
-      - design_breaks                # on a 'broken' retry: the EXACT joins to fix
     outcomes:
       SPEC: spec_questions
       QUESTIONS: spec_questions
@@ -137,19 +142,56 @@ steps:
 
   - name: persist_spec                    # stage specs/contracts/assertions/chains
     block: spec.load                 # rows from the agent's IR (never commits;
-    timeout_s: 30                    # engine applies staged ops at the boundary).
+    max_visits: 5                    # engine applies staged ops at the boundary).
+    timeout_s: 30                    # Revisited by the repair loop.
     outcomes: { ok: validate_spec, empty: rejected }
 
   - name: validate_spec                   # deterministic structural checks + coverage
     block: spec.validate             # gate over the IR. NOT a proof.
+    max_visits: 5
     timeout_s: 30
     outcomes: { ok: design_check, invalid: rejected }
 
   - name: design_check               # MECHANICAL join gate: every new-and-direct
     block: design.check              # call's qualifier handoff must be compatible.
-    timeout_s: 30                    # Deterministic. 'broken' loops back to the
-    outcomes: { ok: write_docs, broken: write_spec } # author WITH the breaks
-                                     # (design_breaks context); visit-capped.
+    max_visits: 5                    # Deterministic. A failure is a HANDLED
+    timeout_s: 30                    # path: the dedicated repair step reworks
+    outcomes: { ok: write_docs, broken: fix_joins }  # ONLY the affected joins.
+
+  # --- the dedicated repair path: scoped rework, never a full re-author ---
+  - name: fix_joins                  # fix EXACTLY the broken handoffs: sees the
+    block: agent.run                 # breaks (why), the affected contracts'
+    llm: joinfix                     # full IR (what), and the picked design
+    schema: spec_result              # (the frame). Emits ONLY what it changed.
+    max_visits: 3
+    params: { max_context_bytes: "{pack.max_context_bytes}" }
+    timeout_s: 1800
+    context:
+      - payload
+      - design_breaks                # WHY it is broken (caller/callee/param/reason)
+      - broken_contracts             # the affected contracts' full IR (incl. calls)
+      - design_choice                # the overall design the repair must respect
+    outcomes:
+      SPEC: merge_fix
+      QUESTIONS: repair_questions
+      EMPTY: rejected
+      agent_limit: parked
+      agent_backend: parked
+      agent_invalid: parked
+      timeout: parked
+
+  - name: repair_questions           # rare: a break needs a human call
+    block: spec.ask
+    params: { stage: repair }
+    max_visits: 3
+    timeout_s: 30
+    outcomes: { proceed: merge_fix, waiting: parked }
+
+  - name: merge_fix                  # deterministic: fold the repaired contracts
+    block: spec.merge_fix            # into the last full IR — untouched contracts
+    max_visits: 3                    # survive verbatim; checks see a WHOLE spec;
+    timeout_s: 30                    # reconcile hash-diffs them into no-ops.
+    outcomes: { ok: persist_spec, empty: rejected }
 
   - name: write_docs                 # spec.md (WHAT) + design.md (HOW) —
     block: docs.render               # projections of the DB, regenerated at

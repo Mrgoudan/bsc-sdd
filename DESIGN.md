@@ -158,3 +158,126 @@ edges:
 | step-level graph | board front page (derived from workflow defs) | always current |
 | per-feature WHAT/HOW | `run/docs/<feature>/spec.md`, `design.md` | regenerated each milestone |
 | ground truth | `run/state/forgeflow.db` + `workflows/*.yaml` | is the system |
+
+## Flow (plain text — renders anywhere)
+
+```
+            requirement.md   (+ smoke.cbs, optional testing.md)
+                  │
+┌─────────────────▼──────────────────────────────────────────────────┐
+│ 1 · plan                              requirement → verified spec  │
+│                                                                    │
+│      decompose to R-items ◀─────────────┐                          │
+│                  │                      │ FAIL                     │
+│                  ▼                      │                          │
+│      fidelity gate (raw ↔ R-items) ─────┘                          │
+│                  │ PASS                                            │
+│                  ▼                                                 │
+│      design options (2-4, or SKIP) ◀────┐                          │
+│                  │                      │ reject all + message     │
+│                  ▼                      │                          │
+│   ██ HUMAN: design gate ████████████████┘                          │
+│                  │ picked                                          │
+│                  ▼                                                 │
+│      write spec  (contracts + assertions, traced to R-items)       │
+│                  │                                                 │
+│                  ▼                                                 │
+│      coverage + qualifier-join checks (deterministic)              │
+│                  │                                                 │
+│                  ▼                                                 │
+│      spec.md (WHAT) + design.md (HOW) generated HERE               │
+└──────────────────│─────────────────────────────────────────────────┘
+                   │  spec.validated
+┌──────────────────▼─────────────────────────────────────────────────┐
+│ 2 · code_gen                              spec → verified code     │
+│                                                                    │
+│      freeze module interface (skeleton, once)                      │
+│                  │                                                 │
+│                  ▼                                                 │
+│      behavior tests from the spec (OPTIONAL TDD, no body exists)   │
+│                  │                                                 │
+│                  ▼                                                 │
+│      one function at a time:  generate ──▶ BSC compile (SOUND)     │
+│                                   ▲              │                 │
+│                                   └── red, capped┘ green           │
+│                  │ all green                                       │
+│                  ▼                                                 │
+│      run smoke + TDD suites  (sound per case)                      │
+│                  ▼                                                 │
+│      LLM: behavior assertions hold?   (argued)                     │
+│                  ▼                                                 │
+│      LLM: every R-item fulfilled?     (argued, per-requirement)    │
+└──────────────────│─────────────────────────────────────────────────┘
+                   ▼
+      spec.md / design.md REFRESHED with the full verification trail
+
+┌────────────────────────────────────────────────────────────────────┐
+│ 3 · fn_edit — "change this function" (from the board, any time)    │
+│                                                                    │
+│      edit against the FROZEN interface                             │
+│         │ fits              │ needs interface change               │
+│         ▼                   ▼                                      │
+│      compile + smoke     ██ HUMAN: run full revision? ██           │
+│      only, done              │ picked                              │
+│                              └────▶  back to plan · decompose      │
+│                                      (only the delta re-runs)      │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+## 流程图（中文 · 纯文本）
+
+```
+            需求文档 requirement.md （+ 冒烟测试 smoke.cbs，可选 testing.md）
+                  │
+┌─ 1 · 规划 plan ── 需求 → 已验证的规格 ──────────
+│
+│      需求拆解为 R-条目（原子化、稳定编号） ◀────┐
+│                  │                             │ 不通过
+│                  ▼                             │
+│      忠实性门：R-条目 ↔ 原文一致？ ────────────┘
+│                  │ 通过
+│                  ▼
+│      设计方案（2–4 个，无真分叉则跳过） ◀──────┐
+│                  │                             │ 全部驳回 + 留言
+│                  ▼                             │
+│   ██ 人工：设计决策门 ██───────────────────────┘
+│                  │ 选定
+│                  ▼
+│      撰写规格（契约 + 行为断言，逐条追溯 R-条目）
+│                  ▼
+│      覆盖率 + 限定符衔接检查（确定性，机器）
+│                  ▼
+│      在此生成 spec.md（做什么）+ design.md（怎么做）
+└──────────────────│──────────────────────────────
+                   │  spec.validated（规格已验证）
+┌─ 2 · 代码生成 code_gen ── 规格 → 已验证的代码 ──
+│
+│      冻结模块接口（骨架，一次性）
+│                  ▼
+│      按规格先写行为测试（可选 TDD——此时尚无任何实现）
+│                  ▼
+│      逐函数：生成 ──▶ BSC 编译（可靠门 · 所有权/空值/借用）
+│                ▲            │
+│                └─ 红：重生成（有上限）│ 绿
+│                  │ 全部通过
+│                  ▼
+│      运行冒烟 + TDD 测试（逐用例可靠）
+│                  ▼
+│      LLM：行为断言是否成立？（论证性）
+│                  ▼
+│      LLM：每条 R-条目是否被代码满足？（论证性，逐需求）
+└──────────────────│──────────────────────────────
+                   ▼
+      spec.md / design.md 刷新：补上完整验证轨迹
+
+┌─ 3 · 函数修改 fn_edit ──（随时从看板对任一函数发起）──
+│
+│      在【冻结接口】内修改
+│         │ 接口可容纳          │ 需要改接口
+│         ▼                     ▼
+│      仅编译 + 冒烟，完成   ██ 人工：是否走完整流程？██
+│                               │ 确认
+│                               └────▶ 回到 规划 · 需求拆解
+│                                      （只重跑真正变化的部分）
+└─────────────────────────────────────────────────
+```

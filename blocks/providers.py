@@ -546,3 +546,35 @@ def _design_breaks(env, task, spec):
     res = json.loads(row["result"] or "{}")
     breaks = res.get("chain_breaks") or []
     return breaks or None
+
+
+@context_provider("broken_contracts")
+def _broken_contracts(env, task, spec):
+    """The REPAIR SLICE: only the contracts involved in the design gate's
+    breaks (caller and callee sides), served as their full in-flight IR
+    entries — signature, assertions, fulfills AND calls (calls exist only
+    in the IR, never in DB tables). The repair agent reworks these and
+    nothing else."""
+    rows = env.conn.execute(
+        "SELECT step, result FROM task_steps WHERE task_id=?"
+        " AND step IN ('design_check','merge_fix','write_spec')"
+        " ORDER BY rowid DESC", (task["id"],)).fetchall()
+    breaks, full = None, None
+    for r in rows:
+        res = json.loads(r["result"] or "{}")
+        if breaks is None and r["step"] == "design_check":
+            breaks = res.get("chain_breaks") or []
+        if full is None and r["step"] in ("merge_fix", "write_spec") \
+                and res.get("spec"):
+            full = res["spec"]
+        if breaks is not None and full is not None:
+            break
+    if not breaks or not full:
+        return None
+    affected = set()
+    for b in breaks:
+        for k in ("in", "callee"):
+            if b.get(k):
+                affected.add(b[k])
+    return [c for c in (full.get("contracts") or [])
+            if c.get("contract_key") in affected]

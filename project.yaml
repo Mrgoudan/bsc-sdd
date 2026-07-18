@@ -205,6 +205,7 @@ prompts:
   conform: prompts/conformance.md # impl -> req conformance (the outer envelope)
   fnedit:  prompts/fnedit.md      # surgical single-function edit (or INTERFACE verdict)
   tdd:     prompts/tdd.md         # optional: tests from the spec, before any body
+  joinfix: prompts/joinfix.md     # scoped repair of design-gate breaks (affected contracts only)
 
 schemas:
   requirements_result: schemas/requirements_result.yaml
@@ -239,6 +240,8 @@ agents:
   fnedit:   { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   tdd:      { backend: claude-cli, model: GLM-5.2,
+              env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
+  joinfix:  { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
 
 params:

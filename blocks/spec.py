@@ -344,3 +344,38 @@ def spec_validate(ctx, task, prev):
         return "invalid", {"errors": errors, "spec": spec}
     return "ok", {"spec": spec, "checks_passed": True,
                   "coverage": {"requirements": len(reqs), "covered": len(fulfilled)}}
+
+
+@block("spec.merge_fix", "state", {"ok", "empty"})
+def spec_merge_fix(ctx, task, prev):
+    """Fold a SCOPED repair into the last full IR: the repair agent emits
+    only the contracts it fixed; this block replaces (or adds) them in the
+    previous complete spec and hands the MERGED WHOLE onward — so the
+    coverage/join checks see a full spec, while the reconcile's content
+    hashes make every untouched contract a no-op. Deterministic; the agent
+    never re-emits (and can never accidentally drop) the rest of the spec."""
+    fixed = _get_spec(prev).get("contracts") or []
+    if not fixed:
+        return "empty", {}
+    conn = ctx["_conn"]
+    row = conn.execute(
+        "SELECT result FROM task_steps WHERE task_id=?"
+        " AND step IN ('merge_fix','write_spec') ORDER BY rowid DESC LIMIT 1",
+        (task["id"],)).fetchone()
+    full = (json.loads(row["result"] or "{}") if row else {}).get("spec")
+    if not full or not full.get("contracts"):
+        return "empty", {}
+    by_key = {c.get("contract_key"): i
+              for i, c in enumerate(full["contracts"])}
+    merged = list(full["contracts"])
+    replaced, added = 0, 0
+    for c in fixed:
+        ck = c.get("contract_key")
+        if ck in by_key:
+            merged[by_key[ck]] = c
+            replaced += 1
+        else:
+            merged.append(c)
+            added += 1
+    out = dict(full, contracts=merged)
+    return "ok", {"spec": out, "replaced": replaced, "added": added}
