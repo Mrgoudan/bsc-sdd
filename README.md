@@ -161,6 +161,11 @@ this repo stays infra-only:
 ~/bsd/bsc-sdd-projects/<FEATURE-KEY>/
   requirement.md      # pure behavior, no implementation vocabulary
   smoke.cbs           # the runnable behavior floor for this feature
+  testing.md          # OPTIONAL: this feature's testing-environment guide
+~/bsd/bsc-sdd-projects/
+  testing.md          # OPTIONAL: environment-wide testing guide (harness,
+                      # fixtures, conventions) — the TDD agent writes INTO
+                      # a large existing test environment, not beside it
 ```
 
 Then on the board's front page, open **"start a feature run"**: feature

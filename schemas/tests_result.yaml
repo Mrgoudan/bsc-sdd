@@ -1,18 +1,22 @@
-# The TDD agent's output: one runnable test file derived from the SPEC ONLY
-# (skeleton interface + contracts + assertions + success signals). Generated
-# BEFORE any function body exists — implementation-blind by construction.
+# The TDD agent's output: one runnable BEHAVIOR-test file derived from the
+# SPEC ONLY (skeleton interface + chains + assertions + success signals),
+# following the project's test_skill conventions when one is provided.
+# Generated BEFORE any function body exists — implementation-blind by
+# construction. Scenarios, not unit tests: user stories through the public
+# interface, asserting observable outcomes.
 type: object
 required: [verdict]
 properties:
   verdict: { enum: [TESTS, EMPTY] }
-  body: { type: string }            # complete .cbs: includes the module .hbs,
-                                    # one main, prints each check, nonzero exit
-                                    # on the first failure
+  body: { type: string }            # the complete test file (standalone main,
+                                    # or the project's harness style per
+                                    # test_skill)
   summary: { type: string }         # one line: what the suite covers
-  cases:                            # traceability: which spec item each case pins
+  scenarios:                        # traceability: what each story pins
     type: array
     items:
       type: object
       properties:
         name:   { type: string }
-        covers: { type: string }    # R-* key or contract_key the case exercises
+        story:  { type: string }    # one line given/when/then
+        covers: { type: string }    # chain_key / R-* keys exercised

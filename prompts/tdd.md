@@ -1,37 +1,52 @@
-# TDD — write the tests before any implementation exists
+# TDD — write the BEHAVIOR tests before any implementation exists
 
 Emit ONE object matching `tests_result`. You are writing the feature's
-executable acceptance tests **from the spec alone** — no function body has
-been generated yet, and that is the point: the tests pin what the spec
-PROMISES, so the implementation must come to them.
+executable **behavior tests** from the spec alone — no function body has
+been generated yet, and that is the point: the tests pin what the system
+PROMISES TO DO for its user, so the implementation must come to them.
 
-## Sources (all in context — use nothing else)
+## Behavior tests, not unit tests
 
-- `skeleton` — the frozen module interface (.hbs): the exact types and
-  signatures your test calls must satisfy (ownership annotations included).
-- `spec_slice` / `assertions` — every contract with its pre/post/side-effect
-  predicates. Every `post` assertion whose `discharged_by` is `test` MUST
-  have at least one case.
-- `requirements` — the `success_signal` items are end-to-end scenarios;
-  cover each one that is testable at this interface.
+Do NOT write one test per function. Write **scenarios**: each is a user
+story exercised through the public interface — a sequence of calls that
+builds a situation, acts, and asserts the OBSERVABLE outcome.
 
-## The file
+- `chains` are the spec's own use cases (ordered call sequences) — turn
+  each into at least one scenario.
+- `requirements`' `success_signal` items are end-to-end promises — cover
+  each testable one.
+- `assertions` with `discharged_by: test` tell you which promises need a
+  runtime witness — fold them into scenarios where they naturally occur;
+  do not manufacture a micro-test per assertion.
 
-One complete BSC `.cbs` (`body`): `#include` the module's `.hbs` (bare name,
-as the skeleton does), one `main`, deterministic, no external input. For each
-check print a stable line (`ok <case>` / `FAIL <case>`) and exit nonzero on
-the first failure. Respect BSC discipline at call sites: borrows
-(`&_Const`/`&_Mut`), ownership transfer where a signature takes `_Owned`,
-no use-after-move — your test must COMPILE against the skeleton with the
-same soundness rules as the implementation.
+Assert only what a USER of the interface can observe (returned values,
+reported sizes/kinds, presence/absence, lifecycle effects). Never assert
+internal representation.
 
-Fill `cases` with `{name, covers}` so each case traces to the R-* item or
-contract it pins. Keep cases independent; build the fixtures each case
-needs; free everything you create exactly once.
+## The environment: `test_skill`
 
-If the interface makes a predicate untestable from outside (internal state
-with no observer), skip it — do not invent accessors that are not in the
-skeleton. `EMPTY` only when there is genuinely nothing testable.
+If `test_skill` is present, it is the PROJECT'S testing environment guide
+— harness, fixtures, naming, helpers, where suites live, how they run.
+**Follow it over the defaults below**: write tests that belong in that
+environment, reusing its fixtures/helpers instead of reinventing them.
+
+Without a `test_skill`: one complete standalone BSC `.cbs` (`body`) —
+`#include` the module's `.hbs` (bare name, as the skeleton does), one
+`main`, deterministic, no external input; print a stable line per scenario
+(`ok <scenario>` / `FAIL <scenario>`) and exit nonzero on first failure.
+
+## BSC discipline (either way)
+
+Your calls must COMPILE against the frozen `skeleton` under the same
+soundness rules as the implementation: borrows (`&_Const`/`&_Mut`),
+ownership transfer where a signature takes `_Owned`, no use-after-move;
+every scenario builds its own fixtures and frees what it creates exactly
+once. If a promise is unobservable at this interface, skip it — never
+invent accessors that are not in the skeleton.
+
+Fill `scenarios` with `{name, story, covers}` — `story` one line of
+given/when/then, `covers` the chain / R-* keys it pins. `EMPTY` only when
+nothing is testable.
 
 On a retry, `compile_feedback` carries the compiler's errors on YOUR test
-file — fix the test's BSC usage; never change the interface to suit the test.
+file — fix the test's BSC usage; never bend the interface to the test.

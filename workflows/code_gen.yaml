@@ -77,8 +77,10 @@ steps:
       - payload
       - skeleton                     # the frozen .hbs the tests compile against
       - spec_slice                   # every contract (signatures)
-      - assertions                   # the promises each case must pin
-      - requirements                 # success_signal items = e2e scenarios
+      - chains                       # the spec's use cases -> the scenarios
+      - assertions                   # promises needing a runtime witness
+      - requirements                 # success_signal items = e2e promises
+      - test_skill                   # the PROJECT's testing environment guide
       - compile_feedback             # on a retry: the compiler's errors on the TESTS
     outcomes:
       TESTS: write_tests

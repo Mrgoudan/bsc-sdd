@@ -491,3 +491,43 @@ def _edit_rounds(env, task, spec):
                     "verdict": r["verdict"],
                     "answer": json.loads(r["answer"] or "{}")})
     return out
+
+
+@context_provider("chains")
+def _chains(env, task, spec):
+    """The use-case call chains — the spec's own behavior scenarios: each an
+    ordered sequence of contract calls. The behavior-test author turns these
+    (plus the success signals) into executable stories."""
+    fk = _feature_key(task)
+    if not fk:
+        return []
+    rows = env.conn.execute(
+        "SELECT ch.chain_key, ch.step_seq, ch.contract_key FROM chains ch"
+        " JOIN specs s ON s.id = ch.spec_id WHERE s.feature_key=?"
+        " ORDER BY ch.chain_key, ch.step_seq", (fk,)).fetchall()
+    out = {}
+    for r in rows:
+        out.setdefault(r["chain_key"], []).append(r["contract_key"])
+    return [{"chain_key": k, "calls": v} for k, v in sorted(out.items())]
+
+
+@context_provider("test_skill")
+def _test_skill(env, task, spec):
+    """The project's TESTING SKILL — a human-authored document describing how
+    tests are written in THIS environment (harness, fixtures, conventions,
+    how suites run). Large existing projects have large test environments;
+    the behavior-test author must write INTO them, not beside them.
+    Resolution: projects/<feature_key>/testing.md overrides
+    projects/testing.md (environment-wide). Absent -> None (standalone
+    harness conventions apply)."""
+    from pathlib import Path
+    fk = _feature_key(task)
+    root = getattr(env.pack, "paths", {}).get("projects") if env.pack else None
+    if not root:
+        return None
+    for cand in ((Path(root) / (fk or "")) / "testing.md",
+                 Path(root) / "testing.md"):
+        if cand.is_file():
+            return {"source": str(cand),
+                    "text": cand.read_text(errors="replace")[:20000]}
+    return None

@@ -401,5 +401,5 @@ def codegen_write_tests(ctx, task, prev):
     (root / TESTS_CBS).parent.mkdir(parents=True, exist_ok=True)
     (root / TESTS_HBS).write_text("")
     (root / TESTS_CBS).write_text(body.rstrip() + "\n")
-    cases = (prev or {}).get("cases") or []
-    return "ok", {"written": [str(root / TESTS_CBS)], "cases": len(cases)}
+    scenarios = (prev or {}).get("scenarios") or []
+    return "ok", {"written": [str(root / TESTS_CBS)], "scenarios": len(scenarios)}
