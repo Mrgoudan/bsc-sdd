@@ -159,6 +159,22 @@ steps:
     outcomes: { ok: write_docs, broken: fix_joins }  # ONLY the affected joins.
 
   # --- the dedicated repair path: scoped rework, never a full re-author ---
+  - name: write_docs                 # spec.md (WHAT) + design.md (HOW) —
+    block: docs.render               # projections of the DB, regenerated at
+    timeout_s: 30                    # every milestone; never hand-edited.
+    params: { out_dir: "{paths.data_root}/docs" }
+    outcomes: { ok: announce, empty: rejected }
+
+  - name: announce                   # hand-off carries the KEYS, not the IR:
+    block: event.emit                # code_gen reads the spec from the DB by
+    timeout_s: 10                    # feature_key; base rides through for the
+    params:                          # worktree. (spec.requested must carry base.)
+      name: spec.validated
+      force: true                    # a re-validated spec must RE-trigger the build
+      data: { feature_key: "{payload.feature_key}", base: "{payload.base}",
+              tdd: "{payload.tdd}" }
+    outcomes: { ok: done }
+
   - name: fix_joins                  # fix EXACTLY the broken handoffs: sees the
     block: agent.run                 # breaks (why), the affected contracts'
     llm: joinfix                     # full IR (what), and the picked design
@@ -192,22 +208,6 @@ steps:
     max_visits: 3                    # survive verbatim; checks see a WHOLE spec;
     timeout_s: 30                    # reconcile hash-diffs them into no-ops.
     outcomes: { ok: persist_spec, empty: rejected }
-
-  - name: write_docs                 # spec.md (WHAT) + design.md (HOW) —
-    block: docs.render               # projections of the DB, regenerated at
-    timeout_s: 30                    # every milestone; never hand-edited.
-    params: { out_dir: "{paths.data_root}/docs" }
-    outcomes: { ok: announce, empty: rejected }
-
-  - name: announce                   # hand-off carries the KEYS, not the IR:
-    block: event.emit                # code_gen reads the spec from the DB by
-    timeout_s: 10                    # feature_key; base rides through for the
-    params:                          # worktree. (spec.requested must carry base.)
-      name: spec.validated
-      force: true                    # a re-validated spec must RE-trigger the build
-      data: { feature_key: "{payload.feature_key}", base: "{payload.base}",
-              tdd: "{payload.tdd}" }
-    outcomes: { ok: done }
 
   - name: rejected                   # spec was empty or failed structural checks.
     block: event.emit                # No '{prev.*}' here: different steps route
