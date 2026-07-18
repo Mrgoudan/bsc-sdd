@@ -106,6 +106,7 @@ steps:
     block: agent.run                 # ownership sigs, behavior assertions, and a
     llm: author                      # `fulfills` trace to the R-* items).
     schema: spec_result
+    max_visits: 4                    # the design_check 'broken' loop re-enters here
     params:
       max_context_bytes: "{pack.max_context_bytes}"
       cwd: "{paths.repo}"            # agentic search while designing
@@ -117,6 +118,7 @@ steps:
       - design_choice                # the design the human picked — HONOR IT
       - current_spec                 # existing contracts: re-emit unchanged ones VERBATIM
       - prior_art                    # reuse-first: existing APIs (other features) + design idioms
+      - design_breaks                # on a 'broken' retry: the EXACT joins to fix
     outcomes:
       SPEC: spec_questions
       QUESTIONS: spec_questions
@@ -145,8 +147,9 @@ steps:
 
   - name: design_check               # MECHANICAL join gate: every new-and-direct
     block: design.check              # call's qualifier handoff must be compatible.
-    timeout_s: 30                    # Deterministic; catches an inconsistent
-    outcomes: { ok: write_docs, broken: rejected } # DESIGN before any codegen.
+    timeout_s: 30                    # Deterministic. 'broken' loops back to the
+    outcomes: { ok: write_docs, broken: write_spec } # author WITH the breaks
+                                     # (design_breaks context); visit-capped.
 
   - name: write_docs                 # spec.md (WHAT) + design.md (HOW) —
     block: docs.render               # projections of the DB, regenerated at
@@ -164,10 +167,10 @@ steps:
               tdd: "{payload.tdd}" }
     outcomes: { ok: done }
 
-  - name: rejected                   # spec was empty or failed structural checks
-    block: event.emit
-    timeout_s: 10
-    params:
+  - name: rejected                   # spec was empty or failed structural checks.
+    block: event.emit                # No '{prev.*}' here: different steps route
+    timeout_s: 10                    # in with different result shapes — the
+    params:                          # details live in the task's audit trail.
       name: spec.rejected
-      data: { feature_key: "{payload.feature_key}", errors: "{prev.errors}" }
+      data: { feature_key: "{payload.feature_key}" }
     outcomes: { ok: done }

@@ -531,3 +531,18 @@ def _test_skill(env, task, spec):
             return {"source": str(cand),
                     "text": cand.read_text(errors="replace")[:20000]}
     return None
+
+
+@context_provider("design_breaks")
+def _design_breaks(env, task, spec):
+    """On a write_spec retry after the mechanical join gate said 'broken':
+    the exact qualifier-handoff breaks it found (caller, callee, param,
+    reason). The author must fix THESE joins and change nothing else."""
+    row = env.conn.execute(
+        "SELECT result FROM task_steps WHERE task_id=? AND step='design_check'"
+        " ORDER BY rowid DESC LIMIT 1", (task["id"],)).fetchone()
+    if not row:
+        return None
+    res = json.loads(row["result"] or "{}")
+    breaks = res.get("chain_breaks") or []
+    return breaks or None
