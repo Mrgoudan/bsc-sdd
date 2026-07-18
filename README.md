@@ -90,15 +90,22 @@ corpus, and every red-then-green fight records a `fix_lessons` row.
 
 ## Pipeline (`workflows/`)
 
-- **`plan`** — `spec.requested` → **`decompose`** (prose → `R-*`) →
-  `reqs.load` → author the IR (with `fulfills`) → `spec.load` →
-  `spec.validate` (structural checks **+ coverage gate**, deterministic, *not* a
-  proof) → emits `spec.validated`.
-- **`code_gen`** — `spec.validated` → `codegen.plan` (units = modules) →
-  worktree → `codegen` → `codegen.write` → **`verify.compile`** (sound gate;
-  `red` → back to `codegen` with the errors, capped) → `verify.test` →
-  `behavior` (LLM residual) → `conformance` (impl→req) → emits
-  `sdd.completed` / `sdd.blocked`.
+- **`plan`** — `spec.requested` → `decompose` (prose → `R-*`) →
+  `req_questions` → `persist_reqs` → `fidelity_check` (raw ↔ R-items) →
+  `design_brief` → **`design_gate`** (human) → `write_spec` →
+  `spec_questions` → `persist_spec` → `validate_spec` (coverage gate) →
+  `design_check` (mechanical qualifier-join gate) → `write_docs` → emits
+  `spec.validated`.
+- **`code_gen`** — `spec.validated` → worktree → skeleton (frozen interface)
+  → per-function loop: `gen_function` → **`compile`** (sound gate; `red` →
+  regenerate with errors, capped) → `smoke_test` → `behavior_check` (LLM
+  residual) → `conformance_check` (impl→req) → `record_verdicts` →
+  `write_docs` → emits `sdd.completed` / `sdd.blocked`.
+- **`fn_route` + `fn_edit`** — "change this function" from the board:
+  body-only edits re-run gen→compile→smoke with no spec ceremony; an
+  interface-touching edit raises a human decision (**`interface_gate`**) and
+  only a *picked* verdict escalates into the full pipeline
+  (`spec.requested` + `edit_request`).
 
 ---
 
@@ -124,12 +131,102 @@ types and must be generated together).
   yet; `sdd.completed` is emitted, not pushed. Add a forge + `forge.open_pr`
   step to publish.
 
-## Run
+## Running it
+
+**Prereqs (machine-specific, all declared in `project.yaml paths:`):**
+a BiSheng clang build (`paths.bsc_clang`), the libcbs sources
+(`paths.libcbs_src`), an anchor git repo for build worktrees
+(`paths.repo` — any repo with one commit), a projects folder
+(`paths.projects`), and a secrets env file (mode **0600**) holding
+`ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` for the agents. Optional:
+`dot` (graphviz) on PATH makes the board's pipeline graphs pretty.
+
+**1. Start the daemon (one per state dir, flock-enforced):**
 
 ```bash
-FORGEFLOW_SECRETS=~/.config/forgeflow/secrets.env \
-  ./run-bsc-sdd.sh validate            # check the pack loads
-  ./run-bsc-sdd.sh emit spec.requested --data '{"feature_key":"FEATURE-001","requirement":"..."}'
+FORGEFLOW_SECRETS=~/.config/forgeflow/secrets.env ./run-bsc-sdd.sh run
 ```
 
-Per-feature fixtures (requirement.md, smoke.cbs) live outside this repo under `paths.projects/<feature_key>/` — this repo is infrastructure only.
+The board serves at **http://127.0.0.1:8791** (loopback; SSH-tunnel it
+from elsewhere). `./run-bsc-sdd.sh validate` checks the pack loads
+without starting anything.
+
+**2. Start a feature.** Put the human inputs in the projects folder —
+this repo stays infra-only:
+
+```
+~/bsd/bsc-sdd-projects/<FEATURE-KEY>/
+  requirement.md      # pure behavior, no implementation vocabulary
+  smoke.cbs           # the runnable behavior floor for this feature
+```
+
+Then on the board's front page, open **"start a feature run"**: feature
+key, paste the requirement *path or text*, base branch, click start.
+(CLI twin: `./run-bsc-sdd.sh emit spec.requested --data '{...}'`.)
+
+**3. While it runs.** The front page shows the run as a live pipeline
+(expand any workflow for its step graph; click a block for what it
+does). You will be pulled in at exactly two kinds of moments:
+
+- **Decisions** (`/decisions`, desktop-notified): design forks and
+  interface-change gates. Click a card to choose it; one "Reject all &
+  regenerate" button with an optional message sends the agent back.
+- **Questions**: `./run-bsc-sdd.sh questions`, answer with
+  `./run-bsc-sdd.sh answer Q-1=<choice>` (or `--accept-defaults`);
+  `./run-bsc-sdd.sh discuss` opens an interactive session over a
+  decision thread.
+
+**4. What you get.** `run/docs/<FEATURE-KEY>/spec.md` (WHAT) +
+`design.md` (HOW), regenerated at every milestone; the verification
+trail (sound vs argued, per assertion) on the board and in the DB; the
+green code itself in the DB (`codegen_units`), rehydratable into any
+worktree. `/run/<FEATURE-KEY>` is the complete audit trail.
+
+**5. Change something later.**
+
+- *A function*: click it on the board → "ask AI to change this
+  function". Body-only edits skip the spec ceremony; interface-touching
+  edits come back as a decision.
+- *The requirement*: edit the doc, then "revise →" on the finished run
+  (re-launches with the same feature key). Only what actually changed
+  re-runs — R-keys and contract hashes are stable.
+
+---
+
+## Making changes to the pack
+
+Anatomy — each concern lives in exactly one place:
+
+| you want to change… | edit |
+|---|---|
+| paths, models/agents, concurrency, board, launch forms | `project.yaml` |
+| the shape of a workflow (steps, routing, gates, caps) | `workflows/*.yaml` |
+| what an agent is told | `prompts/*.md` |
+| what an agent must return (verdict enum = routable outcomes) | `schemas/*.yaml` |
+| deterministic logic (blocks) and context providers | `blocks/*.py` |
+| pack tables / the IR | `schema/schema.sql` (+ `scripts/migrate_db.py` for column adds) |
+| test harness / notifications / CLI helpers | `scripts/` |
+
+Rules of the game (the engine enforces them **fail-loud at startup** —
+`./run-bsc-sdd.sh validate` after every edit):
+
+- A step's `outcomes:` must map the block's outcome set **exactly**; an
+  llm step's schema `verdict.enum` extends that set — enum values *are*
+  the routable outcomes.
+- Every referenced file (prompt, schema, block, path) must exist at
+  load; events must be declared under `emits:`; a `select:`/corpus must
+  name real tables.
+- New blocks: `@block("name", exec_class, {outcomes})` in a
+  `blocks/*.py` file registered under `blocks:` in `project.yaml`. New
+  context: `@context_provider("name")` in `blocks/providers.py`, then
+  list it under the step's `context:`.
+- The board is config, not code: panels/views/launch forms are
+  SELECT-only SQL + field lists in `project.yaml board:`; a column
+  aliased `link:<view>` becomes a cross-link; `thread_key` is what
+  groups tasks into runs.
+- **Restart the daemon to pick up changes.** In-flight tasks park as
+  `definition_changed` rather than continuing on a stale definition —
+  prefer editing between runs; `queue unpark` resumes after you're done.
+- Keep it three-layered: engine = mechanism (generic, separate repo),
+  this pack = meaning (BSC + SDD), `paths.projects/<key>/` = per-feature
+  human inputs. Project material never lands in this repo.
