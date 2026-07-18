@@ -160,7 +160,8 @@ steps:
     params:                          # worktree. (spec.requested must carry base.)
       name: spec.validated
       force: true                    # a re-validated spec must RE-trigger the build
-      data: { feature_key: "{payload.feature_key}", base: "{payload.base}" }
+      data: { feature_key: "{payload.feature_key}", base: "{payload.base}",
+              tdd: "{payload.tdd}" }
     outcomes: { ok: done }
 
   - name: rejected                   # spec was empty or failed structural checks

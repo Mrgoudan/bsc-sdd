@@ -85,7 +85,8 @@ def codegen_need_skeleton(ctx, task, prev):
     (skeleton survived; reconcile drops it only on a signature change), 'build'
     on a first run or after a signature change."""
     row = ctx["_conn"].execute(
-        "SELECT 1 FROM codegen_modules WHERE feature_key=? LIMIT 1", (_fk(task),)).fetchone()
+        "SELECT 1 FROM codegen_modules WHERE feature_key=?"
+        " AND module != '__tests__' LIMIT 1", (_fk(task),)).fetchone()
     return ("reuse" if row else "build"), {}
 
 
@@ -209,7 +210,8 @@ def codegen_write_fn(ctx, task, prev):
                      " WHERE feature_key=? AND module=?", (fk, module)).fetchone()
     if not m:                                   # single-module fallback (legacy row)
         m = conn.execute("SELECT cbs_path, cbs_head FROM codegen_modules"
-                         " WHERE feature_key=? LIMIT 1", (fk,)).fetchone()
+                         " WHERE feature_key=? AND module != '__tests__'"
+                         " LIMIT 1", (fk,)).fetchone()
     if not m:
         return "empty", {}
     root = _worktree(ctx, task)
@@ -349,7 +351,55 @@ def codegen_escalate(ctx, task, prev):
                  (fk, payload.get("contract_key")))
     data = {"feature_key": fk, "requirement": r[0],
             "base": payload.get("base") or "main",
+            "tdd": payload.get("tdd") or "no",
             "edit_request": payload.get("instruction") or "",
             "_force": time.time_ns()}
     return "ok", {"_staged": [{"op": "emit_event", "name": "spec.requested",
                                "payload": data}]}
+
+
+# ------------------------------------------------------------- optional TDD
+#
+# payload.tdd truthy -> AFTER the skeleton freezes the interface and BEFORE
+# any body exists, an agent writes the feature's executable tests from the
+# SPEC ALONE (implementation-blind by construction). The test file is
+# syntax/ownership-checked against the frozen .hbs (the sound gate), stored
+# as a pseudo-module (rehydrate restores it into every later worktree —
+# including fn_edit's), and run by the same harness as the smoke test.
+
+TESTS_MODULE = "__tests__"
+TESTS_CBS = "tests/generated_tests.cbs"
+TESTS_HBS = "tests/generated_tests.hbs"          # empty; rehydrate symmetry
+
+
+@block("codegen.need_tests", "state", {"gen", "skip"})
+def codegen_need_tests(ctx, task, prev):
+    """The optional-TDD router: payload.tdd in yes/true/1/on -> generate
+    spec-derived tests first; anything else -> straight to codegen."""
+    v = str((task.get("payload") or {}).get("tdd") or "").strip().lower()
+    return ("gen" if v in ("1", "true", "yes", "on", "tdd") else "skip"), \
+        {"tdd": v or "no"}
+
+
+@block("codegen.write_tests", "state", {"ok", "empty"})
+def codegen_write_tests(ctx, task, prev):
+    """Persist the generated test file as the __tests__ pseudo-module (so
+    rehydrate restores it like any module) and write it into the worktree;
+    `written` feeds the same verify.compile sound gate the bodies use."""
+    conn = ctx["_conn"]
+    fk = _fk(task)
+    body = (prev or {}).get("body")
+    if not body:
+        return "empty", {}
+    conn.execute("DELETE FROM codegen_modules WHERE feature_key=? AND module=?",
+                 (fk, TESTS_MODULE))
+    conn.execute(
+        "INSERT INTO codegen_modules(feature_key, module, hbs_path, cbs_path,"
+        " hbs, cbs_head) VALUES (?,?,?,?,?,?)",
+        (fk, TESTS_MODULE, TESTS_HBS, TESTS_CBS, "", body))
+    root = _worktree(ctx, task)
+    (root / TESTS_CBS).parent.mkdir(parents=True, exist_ok=True)
+    (root / TESTS_HBS).write_text("")
+    (root / TESTS_CBS).write_text(body.rstrip() + "\n")
+    cases = (prev or {}).get("cases") or []
+    return "ok", {"written": [str(root / TESTS_CBS)], "cases": len(cases)}

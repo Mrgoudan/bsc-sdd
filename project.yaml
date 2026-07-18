@@ -84,6 +84,8 @@ board:
         - { name: requirement, label: "requirement — file path or the full text",
             kind: path_or_text, required: true }
         - { name: base, label: base branch, default: main }
+        - { name: tdd, label: "TDD — write spec-derived tests before any code (yes/no)",
+            default: "no" }
     # "ask AI to change this function" — lives on the function view; the
     # contract key rides in hidden ({key} = the view's entity). Body-only
     # edits skip the spec ceremony; interface-touching edits surface a
@@ -202,6 +204,7 @@ prompts:
   behavior: prompts/behavior.md   # LLM behavior-logic check over structured assertions
   conform: prompts/conformance.md # impl -> req conformance (the outer envelope)
   fnedit:  prompts/fnedit.md      # surgical single-function edit (or INTERFACE verdict)
+  tdd:     prompts/tdd.md         # optional: tests from the spec, before any body
 
 schemas:
   requirements_result: schemas/requirements_result.yaml
@@ -213,6 +216,7 @@ schemas:
   behavior_verdict: schemas/behavior_verdict.yaml
   conformance_result: schemas/conformance_result.yaml
   fnedit_result:    schemas/fnedit_result.yaml
+  tests_result:     schemas/tests_result.yaml
 
 agents:
   # GLM behind the agentic claude CLI (so the bsc-* skills + worktree work).
@@ -234,6 +238,8 @@ agents:
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   fnedit:   { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
+  tdd:      { backend: claude-cli, model: GLM-5.2,
+              env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
 
 params:
   # compile a generated .cbs for syntax + ownership/nullability/init checking.
@@ -251,8 +257,12 @@ params:
   # behavior floor: compile the GENERATED module + the feature's smoke test
   # into a real binary and run it ({worktree} = this task's worktree, resolved
   # by verify.test). Fully configuration: swap the script/smoke per feature.
+  # extra args after libcbs are OPTIONAL test files (each its own main, built
+  # and run separately); absent files are skipped with a note — the generated
+  # TDD suite only exists when the run asked for it.
   test_cmd: ["{paths.scripts}/run_tests.sh", "{worktree}",
              "{paths.projects}/{payload.feature_key}/smoke.cbs",
-             "{paths.bsc_clang}", "{paths.libcbs_src}"]
+             "{paths.bsc_clang}", "{paths.libcbs_src}",
+             "{worktree}/tests/generated_tests.cbs"]
   # budget guard on every agent.run step (runaway guard + context.json manifest).
   max_context_bytes: 300000

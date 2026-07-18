@@ -97,9 +97,12 @@ corpus, and every red-then-green fight records a `fix_lessons` row.
   `design_check` (mechanical qualifier-join gate) → `write_docs` → emits
   `spec.validated`.
 - **`code_gen`** — `spec.validated` → worktree → skeleton (frozen interface)
-  → per-function loop: `gen_function` → **`compile`** (sound gate; `red` →
-  regenerate with errors, capped) → `smoke_test` → `behavior_check` (LLM
-  residual) → `conformance_check` (impl→req) → `record_verdicts` →
+  → **optional TDD** (launch toggle: `gen_tests` writes the executable
+  suite from the spec alone — no body exists yet — and it must compile
+  against the frozen interface) → per-function loop: `gen_function` →
+  **`compile`** (sound gate; `red` → regenerate with errors, capped) →
+  `smoke_test` (smoke + the TDD suite when present) → `behavior_check`
+  (LLM residual) → `conformance_check` (impl→req) → `record_verdicts` →
   `write_docs` → emits `sdd.completed` / `sdd.blocked`.
 - **`fn_route` + `fn_edit`** — "change this function" from the board:
   body-only edits re-run gen→compile→smoke with no spec ceremony; an

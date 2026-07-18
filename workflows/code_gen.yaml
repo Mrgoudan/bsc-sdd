@@ -58,7 +58,49 @@ steps:
   - name: seed_units                 # one pending unit per function
     block: codegen.seed_units
     timeout_s: 30
-    outcomes: { ok: next_function, empty: blocked }
+    outcomes: { ok: need_tests, empty: blocked }
+
+  # --- OPTIONAL TDD: tests from the SPEC, before any body exists ---
+  - name: need_tests                 # payload.tdd truthy -> write the tests
+    block: codegen.need_tests        # first; else straight to codegen.
+    timeout_s: 10
+    outcomes: { gen: gen_tests, skip: next_function }
+
+  - name: gen_tests                  # implementation-blind by construction:
+    block: agent.run                 # only the frozen interface + the spec's
+    llm: tdd                         # promises are in context — no body
+    schema: tests_result             # exists anywhere yet.
+    max_visits: 6
+    params: { max_context_bytes: "{pack.max_context_bytes}" }
+    timeout_s: 1800
+    context:
+      - payload
+      - skeleton                     # the frozen .hbs the tests compile against
+      - spec_slice                   # every contract (signatures)
+      - assertions                   # the promises each case must pin
+      - requirements                 # success_signal items = e2e scenarios
+      - compile_feedback             # on a retry: the compiler's errors on the TESTS
+    outcomes:
+      TESTS: write_tests
+      EMPTY: blocked
+      agent_limit: parked
+      agent_backend: parked
+      agent_invalid: parked
+      timeout: parked
+
+  - name: write_tests                # persist as the __tests__ pseudo-module
+    block: codegen.write_tests       # (rehydrate restores it in every later
+    timeout_s: 30                    # worktree, fn_edit's included)
+    outcomes: { ok: compile_tests, empty: blocked }
+
+  - name: compile_tests              # the tests hit the SOUND gate first:
+    block: verify.compile            # valid BSC against the frozen interface
+    lane: build                      # (syntax/ownership only — they cannot
+    max_visits: 8                    # RUN yet; that is smoke_test, after the
+    timeout_s: 600                   # bodies exist. Red-first, honestly.)
+    params: { cmd: "{pack.compile_cmd}", repo: "{paths.repo}" }
+    outcomes: { green: next_function, red: gen_tests, error: blocked,
+                timeout: parked }
 
   # --- the per-function loop: gen one function, compile it, next (or regenerate) ---
   - name: next_function                    # cursor: next pending function -> active,
