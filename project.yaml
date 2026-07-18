@@ -24,7 +24,9 @@ paths:
   bsc_clang:  ~/bsd/llvm-project-dup/build/bin/clang
   libcbs_src: ~/bsd/llvm-project-dup/libcbs/src   # root of the BSC stdlib headers
   scripts:    scripts                            # pack scripts (test harness runner)
-  examples:   examples                           # feature fixtures (smoke tests)
+  # per-feature fixtures (requirement.md, smoke.cbs) live OUTSIDE this repo,
+  # keyed by feature_key — the pack repo is INFRA ONLY, projects never leak in.
+  projects:   ~/bsd/bsc-sdd-projects
   data_root:  run                                # pack-local runtime cache (gitignored)
 
 tools:
@@ -78,7 +80,7 @@ board:
     - title: start a feature run
       event: spec.requested
       fields:
-        - { name: feature_key, label: "feature key (e.g. CJSON-P2)", required: true }
+        - { name: feature_key, label: "feature key (e.g. FEATURE-001)", required: true }
         - { name: requirement, label: "requirement — file path or the full text",
             kind: path_or_text, required: true }
         - { name: base, label: base branch, default: main }
@@ -250,7 +252,7 @@ params:
   # into a real binary and run it ({worktree} = this task's worktree, resolved
   # by verify.test). Fully configuration: swap the script/smoke per feature.
   test_cmd: ["{paths.scripts}/run_tests.sh", "{worktree}",
-             "{paths.examples}/cjson/smoke.cbs",
+             "{paths.projects}/{payload.feature_key}/smoke.cbs",
              "{paths.bsc_clang}", "{paths.libcbs_src}"]
   # budget guard on every agent.run step (runaway guard + context.json manifest).
   max_context_bytes: 300000

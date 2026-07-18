@@ -132,4 +132,4 @@ FORGEFLOW_SECRETS=~/.config/forgeflow/secrets.env \
   ./run-bsc-sdd.sh emit spec.requested --data '{"feature_key":"FEATURE-001","requirement":"..."}'
 ```
 
-See `examples/cjson/` for a worked requirement + its rendered spec.
+Per-feature fixtures (requirement.md, smoke.cbs) live outside this repo under `paths.projects/<feature_key>/` — this repo is infrastructure only.

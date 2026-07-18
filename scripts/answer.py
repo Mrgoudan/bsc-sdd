@@ -3,9 +3,9 @@
 
 List the questions the pipeline is waiting on, answer them, and resume:
 
-  answer.py --db run/state/forgeflow.db --feature CJSON-P1            # list
-  answer.py --db ... --feature CJSON-P1 --set Q-1=replace
-  answer.py --db ... --feature CJSON-P1 --accept-defaults             # take all recommendations
+  answer.py --db run/state/forgeflow.db --feature FEATURE-001            # list
+  answer.py --db ... --feature FEATURE-001 --set Q-1=replace
+  answer.py --db ... --feature FEATURE-001 --accept-defaults             # take all recommendations
 
 Answering the last open blocking question UNPARKS the waiting plan task
 (fresh attempt): the agent re-runs with the full dialogue in its context and

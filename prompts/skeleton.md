@@ -11,12 +11,13 @@ module.
 
 - The `#include`s the module needs (libcbs: `bishengc_safety.hbs`, `string.hbs`,
   `vec.hbs`, etc.).
-- The type set / enum for the JSON kinds.
+- The type set / enum the contracts imply (kinds, tags, variants).
 - The **struct**, defined **once**. Name it **exactly** the type used in the
-  contract signatures (if the signatures say `JSON_Value *`, the struct is
-  `JSON_Value` — do NOT introduce a second name like `cJSON`). This single
-  naming decision is the thing most likely to break every function if it drifts.
-- The destructor for the owned struct (so `Delete` frees the whole tree).
+  contract signatures — never introduce a second synonym name for the same
+  type. This single naming decision is the thing most likely to break every
+  function if it drifts.
+- The destructor for the owned struct (so the delete/free contract frees the
+  whole tree).
 - A **declaration for every function** in `spec_slice`, matching each contract's
   signature exactly (ownership annotations included).
 

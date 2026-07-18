@@ -13,7 +13,7 @@ properties:
     type: object
     required: [title, options]
     properties:
-      title: { type: string }       # e.g. "Editing cJSON_GetArrayItem needs an interface change"
+      title: { type: string }       # e.g. "Editing <function> needs an interface change"
       kind:  { enum: [question] }
       body:  { type: string }       # one line: why the frozen interface blocks it
       context: { type: string }     # markdown-lite situation report: the
