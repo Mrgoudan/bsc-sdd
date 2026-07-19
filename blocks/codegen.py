@@ -428,3 +428,30 @@ def codegen_write_tests(ctx, task, prev):
     (root / TESTS_CBS).write_text(body.rstrip() + "\n")
     scenarios = (prev or {}).get("scenarios") or []
     return "ok", {"written": [str(root / TESTS_CBS)], "scenarios": len(scenarios)}
+
+
+@block("codegen.behavior_repend", "state", {"repend", "none"})
+def codegen_behavior_repend(ctx, task, prev):
+    """The behavior gate's scoped repair: violated assertions NAME their
+    contracts — re-pend exactly those units (fresh compile budget, old body
+    kept in the DB until the regen replaces it, so the repair agent sees
+    what it is fixing via current_body + behavior_findings). The loop then
+    regenerates only the guilty functions and every verifier re-runs.
+    'none' = no violation names a contract (a spec-level finding): that is
+    a human conversation, not a regen."""
+    conn = ctx["_conn"]
+    fk = _fk(task)
+    guilty = []
+    for r in (prev or {}).get("results") or []:
+        if isinstance(r, dict) \
+                and str(r.get("status", "")).lower() == "violated" \
+                and r.get("contract_key"):
+            guilty.append(r["contract_key"])
+    guilty = sorted(set(guilty))
+    if not guilty:
+        return "none", {}
+    marks = ",".join("?" * len(guilty))
+    conn.execute("UPDATE codegen_units SET status='pending', attempts=0,"
+                 " last_error=NULL WHERE feature_key=? AND contract_key IN"
+                 " (%s)" % marks, [fk] + guilty)
+    return "repend", {"repended": guilty, "count": len(guilty)}

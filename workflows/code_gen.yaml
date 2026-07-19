@@ -143,6 +143,8 @@ steps:
       - compile_feedback             # on a retry: the compiler's errors to fix
       - similar: { k: 2 }            # idioms for THIS function (IDF-ranked)
       - fix_hints: { k: 2 }          # on a retry: past (same error -> fixed body) lessons
+      - current_body                 # on a behavior repair: the body being fixed
+      - behavior_findings            # on a behavior repair: WHICH promises broke, and how
       - select:                      # the most similar already-GREEN function, via
           corpus: green_bodies       # the ENGINE cascade (embeddings cached; flip
           query: "{prev.summary} {prev.signature}"   # to a pinned model in config)
@@ -192,6 +194,7 @@ steps:
     block: agent.run                 # compiler can't see, over the STRUCTURED
     llm: behavior                    # assertion slot (swap to Z3 later).
     schema: behavior_verdict
+    max_visits: 3                    # bounds the FAIL -> repair -> recheck loop
     params: { max_context_bytes: "{pack.max_context_bytes}" }
     timeout_s: 1800
     context:
@@ -199,8 +202,8 @@ steps:
       - assertions                   # this spec's behavior pre/post (text+formal)
     outcomes:
       PASS: conformance_check
-      FAIL: blocked
-      agent_limit: parked
+      FAIL: behavior_repend          # violated assertions NAME their functions:
+      agent_limit: parked            # scoped repair, then every verifier re-runs
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
@@ -240,6 +243,12 @@ steps:
       name: sdd.completed
       data: { feature_key: "{payload.feature_key}" }
     outcomes: { ok: done }
+
+  - name: behavior_repend            # the behavior gate's scoped repair: violated
+    block: codegen.behavior_repend   # assertions name their contracts — re-pend
+    max_visits: 3                    # exactly those and re-enter the loop (the
+    timeout_s: 30                    # regen sees current_body + behavior_findings);
+    outcomes: { repend: next_function, none: blocked }  # spec-level finding -> human
 
   - name: retry_gate                 # bump this function's attempt count; regenerate
     block: codegen.retry_gate        # ('retry') or give up ('giveup') past `cap`.

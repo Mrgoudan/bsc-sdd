@@ -463,12 +463,17 @@ def _current_body(env, task, spec):
     payload.contract_key — the fn_edit workflow's target."""
     fk = _feature_key(task)
     ck = (task.get("payload") or {}).get("contract_key")
+    if fk and not ck:
+        u = env.conn.execute(
+            "SELECT contract_key FROM codegen_units WHERE feature_key=?"
+            " AND status='active' LIMIT 1", (fk,)).fetchone()
+        ck = u["contract_key"] if u else None    # repair regens: the ACTIVE unit
     if not fk or not ck:
         return None
     r = env.conn.execute(
         "SELECT body, attempts, last_error, status FROM codegen_units"
         " WHERE feature_key=? AND contract_key=?", (fk, ck)).fetchone()
-    if not r:
+    if not r or not r["body"]:
         return None
     return {"contract_key": ck, "status": r["status"], "attempts": r["attempts"],
             "body": r["body"], "last_error": (r["last_error"] or "")[:2000] or None}
@@ -594,3 +599,40 @@ def _bsc_skill(env, task, spec):
     if not f.is_file():
         return None
     return f.read_text(errors="replace")[:12000]
+
+
+@context_provider("behavior_findings")
+def _behavior_findings(env, task, spec):
+    """On a behavior-repair regen: the violated assertions for the ACTIVE
+    contract (verbatim, with the checker's evidence) plus a one-line list
+    of the other guilty contracts — the function is regenerated to make
+    THESE hold, everything else stays."""
+    fk = _feature_key(task)
+    if not fk:
+        return None
+    u = env.conn.execute(
+        "SELECT contract_key FROM codegen_units WHERE feature_key=?"
+        " AND status='active' LIMIT 1", (fk,)).fetchone()
+    if not u:
+        return None
+    row = env.conn.execute(
+        "SELECT result FROM task_steps WHERE task_id=? AND"
+        " step='behavior_check' ORDER BY rowid DESC LIMIT 1",
+        (task["id"],)).fetchone()
+    if not row:
+        return None
+    res = json.loads(row["result"] or "{}")
+    mine, others = [], set()
+    for r in res.get("results") or []:
+        if not isinstance(r, dict) \
+                or str(r.get("status", "")).lower() != "violated":
+            continue
+        if r.get("contract_key") == u["contract_key"]:
+            mine.append({"assertion": r.get("assertion"),
+                         "evidence": r.get("evidence")})
+        elif r.get("contract_key"):
+            others.add(r["contract_key"])
+    if not mine and not others:
+        return None
+    return {"contract_key": u["contract_key"], "violated": mine,
+            "also_being_fixed": sorted(others)}
