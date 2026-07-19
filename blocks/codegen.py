@@ -68,6 +68,15 @@ def codegen_skel_write(ctx, task, prev):
     module = (r[0] if r else None) or "default"
     cbs_path = (r[1] if r else None) or ("src/%s.cbs" % module)
     hbs_path = cbs_path.rsplit(".", 1)[0] + ".hbs"
+    # the skeleton agent tends to include by MODULE name; the file on disk
+    # is derived from the impl path. When they differ the module can never
+    # find its own header (hit live: '#include "cc_run.hbs"' vs
+    # cc_run/exec.hbs — an env error no codegen agent can fix). Normalize
+    # the first .hbs include to the file we actually write.
+    import re as _re
+    base = hbs_path.rsplit("/", 1)[-1]
+    cbs_head = _re.sub(r'#include\s+"[^"]*\.hbs"', '#include "%s"' % base,
+                       cbs_head, count=1)
     conn.execute("DELETE FROM codegen_modules WHERE feature_key=? AND module=?", (fk, module))
     conn.execute(
         "INSERT INTO codegen_modules(feature_key, module, hbs_path, cbs_path, hbs, cbs_head)"
@@ -391,6 +400,17 @@ def codegen_write_tests(ctx, task, prev):
     body = (prev or {}).get("body")
     if not body:
         return "empty", {}
+    m = conn.execute(
+        "SELECT hbs_path FROM codegen_modules WHERE feature_key=?"
+        " AND module != ?", (fk, TESTS_MODULE)).fetchone()
+    if m:
+        # the tests live in tests/; the module's header does not. Rewrite
+        # the first .hbs include to a path that resolves from there.
+        import re as _re
+        import posixpath
+        rel = posixpath.relpath(m[0], TESTS_CBS.rsplit("/", 1)[0])
+        body = _re.sub(r'#include\s+"[^"]*\.hbs"', '#include "%s"' % rel,
+                       body, count=1)
     conn.execute("DELETE FROM codegen_modules WHERE feature_key=? AND module=?",
                  (fk, TESTS_MODULE))
     conn.execute(
