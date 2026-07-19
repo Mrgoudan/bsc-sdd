@@ -104,7 +104,7 @@ def _compile_feedback(env, task, spec):
     pass (no prior red) — the codegen prompt then ignores it."""
     row = env.conn.execute(
         "SELECT result FROM task_steps WHERE task_id=?"
-        " AND step IN ('compile','compile_tests')"
+        " AND step IN ('compile','compile_tests','check_skeleton')"
         " AND outcome='red' ORDER BY at DESC LIMIT 1", (task.get("id"),)).fetchone()
     if not row or not row[0]:
         return None
@@ -126,7 +126,7 @@ def _fix_hints(env, task, spec):
     its own compiler fights. None on a first pass (no red)."""
     row = env.conn.execute(
         "SELECT result FROM task_steps WHERE task_id=?"
-        " AND step IN ('compile','compile_tests')"
+        " AND step IN ('compile','compile_tests','check_skeleton')"
         " AND outcome='red' ORDER BY at DESC LIMIT 1", (task.get("id"),)).fetchone()
     if not row or not row[0]:
         return None

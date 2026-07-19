@@ -32,11 +32,13 @@ steps:
     block: agent.run                 # EVERY declaration) + .cbs preamble. Frozen,
     llm: skeleton                    # so per-function codegen stays consistent.
     schema: skeleton_result
+    max_visits: 5                    # revisited by the check_skeleton red loop
     params: { max_context_bytes: "{pack.max_context_bytes}" }
     timeout_s: 1800
     context:
       - payload
       - spec_slice                   # all the module's contracts (signatures)
+      - compile_feedback             # on a preflight red: the compiler's errors
     outcomes:
       SKELETON: write_skeleton
       EMPTY: blocked
@@ -47,13 +49,28 @@ steps:
 
   - name: write_skeleton                 # persist skeleton + write .hbs / .cbs-head
     block: codegen.skel_write
+    max_visits: 5
     timeout_s: 30
-    outcomes: { ok: seed_units, empty: blocked }
+    outcomes: { ok: check_skeleton, empty: blocked }
 
   - name: rehydrate                  # modification: restore the fresh worktree
     block: codegen.rehydrate         # from the DB (cached .hbs + done bodies), so
     timeout_s: 60                    # the loop re-gens only the pending units.
-    outcomes: { ok: seed_units, empty: gen_skeleton }
+    outcomes: { ok: check_skeleton, empty: gen_skeleton }
+
+  - name: check_skeleton             # PREFLIGHT: the interface itself must
+    block: verify.compile            # compile BEFORE the per-function loop —
+    lane: build                      # an include/typedef/qualifier error in
+    max_visits: 6                    # the skeleton is unfixable from inside
+    timeout_s: 600                   # gen_function; red regenerates the
+    params:                          # skeleton WITH the compiler's errors.
+      cmd: "{pack.compile_cmd}"
+      repo: "{paths.repo}"
+    outcomes:
+      green: seed_units
+      red: gen_skeleton
+      error: blocked
+      timeout: parked
 
   - name: seed_units                 # one pending unit per function
     block: codegen.seed_units

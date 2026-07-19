@@ -114,3 +114,13 @@ If the payload carries `edit_request`, a human ordered this revision from the
 function-edit path: honor it in the spec — change EXACTLY the contracts it
 touches (signature/assertions/calls), keep everything else verbatim. The
 reconcile will ripple only what you actually changed.
+
+## BSC signature discipline (hard rules)
+
+- `_Mut` / `_Const` are borrow-taking OPERATORS for call sites (`&_Mut x`)
+  — they are NEVER declaration qualifiers. A signature containing them is
+  not BiSheng C and is mechanically rejected.
+- A parameter the function mutates through but does not keep:
+  `T *_Borrow name`. Read-only: `const T *_Borrow name`. Ownership
+  transfer: `T *_Owned name`. Raw pointers only where arithmetic/ABI
+  demands.

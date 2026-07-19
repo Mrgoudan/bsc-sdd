@@ -30,3 +30,13 @@ module.
 
 Do NOT implement the public functions here — those come one at a time next.
 Return only the JSON object.
+
+## BSC discipline (hard rules)
+
+- Never `_Mut`/`_Const` in any declaration — they are call-site borrow
+  operators only. Mutable borrow param: `T *_Borrow`; read-only:
+  `const T *_Borrow`; transfer: `T *_Owned`.
+- `typedef` every struct the signatures use by bare name, in the .hbs,
+  before any declaration that mentions it.
+- On a retry, `compile_feedback` carries the compiler's errors on YOUR
+  skeleton — fix the interface; contract signatures stay verbatim.

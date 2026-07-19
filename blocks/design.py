@@ -100,6 +100,21 @@ def design_check(ctx, task, prev):
     sigs = {k: parse_signature(c["signature"]) for k, c in contracts.items()}
     breaks = []
 
+    # INVALID-QUALIFIER GATE: `_Mut`/`_Const` are borrow-taking OPERATORS
+    # (call sites only) — they are never declaration qualifiers. A signature
+    # carrying them is not BSC and would fail every compile downstream
+    # (hit live: `CCRunParsed *_Mut _Nonnull out`). Mechanical, so the spec
+    # is rejected into the scoped-repair loop BEFORE any codegen.
+    for ck, c in contracts.items():
+        for bad in re.findall(r"_Mut\b|_Const\b", c["signature"]):
+            breaks.append({"in": ck, "callee": ck, "param": None,
+                           "reason": "invalid qualifier '%s' in signature — "
+                                     "not a BSC declaration qualifier (a "
+                                     "mutable borrow param is `T *_Borrow "
+                                     "name`, immutable `const T *_Borrow "
+                                     "name`; &_Mut/&_Const only at call "
+                                     "sites)" % bad})
+
     for ck, c in contracts.items():
         caller = sigs[ck]
         moved = {}                                  # owned source -> times consumed

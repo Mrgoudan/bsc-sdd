@@ -85,7 +85,8 @@ def codegen_skel_write(ctx, task, prev):
     (root / hbs_path).parent.mkdir(parents=True, exist_ok=True)
     (root / hbs_path).write_text(hbs)
     (root / cbs_path).write_text(cbs_head.rstrip() + "\n")
-    return "ok", {"module": module, "hbs_path": hbs_path, "cbs_path": cbs_path}
+    return "ok", {"module": module, "hbs_path": hbs_path, "cbs_path": cbs_path,
+                  "written": [str(root / cbs_path)]}
 
 
 @block("codegen.need_skeleton", "state", {"build", "reuse"})
@@ -125,11 +126,15 @@ def codegen_rehydrate(ctx, task, prev):
         return "empty", {}
     root = _worktree(ctx, task)
     restored = 0
+    written = []
     for module, hbs_path, cbs_path, hbs, cbs_head in rows:
         (root / hbs_path).parent.mkdir(parents=True, exist_ok=True)
         (root / hbs_path).write_text(hbs)
         restored += _rebuild_cbs(conn, fk, module, root, cbs_path, cbs_head)
-    return "ok", {"modules": len(rows), "rehydrated_bodies": restored}
+        if module != TESTS_MODULE:
+            written.append(str(root / cbs_path))
+    return "ok", {"modules": len(rows), "rehydrated_bodies": restored,
+                  "written": written}
 
 
 @block("codegen.seed_units", "state", {"ok", "empty"})
