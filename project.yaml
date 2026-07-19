@@ -243,6 +243,24 @@ agents:
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   joinfix:  { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
+  # EXAMPLE — a LOCAL model over any OpenAI-compatible server (Ollama,
+  # vLLM, llama.cpp-server). Single-shot completion: no tools, no cwd, no
+  # CLI system prompt — on this backend the engine's context control is
+  # BYTE-EXACT (everything the model sees is the assembled prompt).
+  #   1. serve a model locally, e.g.:  ollama pull qwen2.5-coder:14b
+  #      (Ollama speaks /v1/chat/completions on 127.0.0.1:11434)
+  #   2. point a step at it:  llm: local_demo  — the step's role must also
+  #      exist under prompts: (prompts are keyed by BINDING name, so either
+  #      add `local_demo: prompts/<role>.md` or rename this binding to the
+  #      role you're rebinding, e.g. `behavior:`/`genfn:`)
+  #   3. response_format json_object makes small local models reliably emit
+  #      the verdict JSON (raw-JSON bodies are accepted since engine 0.7.3)
+  #   4. no api_key_ref needed for a local server; for a keyed endpoint add
+  #      api_key_ref: LOCAL and LLM_API_KEY_LOCAL=... in the secrets file
+  local_demo: { backend: openai-compat, model: "qwen2.5-coder:14b",
+                base_url: "http://127.0.0.1:11434/v1",
+                params: { temperature: 0.2, max_tokens: 4096,
+                          response_format: { type: json_object } } }
 
 params:
   # compile a generated .cbs for syntax + ownership/nullability/init checking.
