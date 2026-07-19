@@ -124,6 +124,7 @@ steps:
       - design_choice                # the design the human picked — HONOR IT
       - current_spec                 # existing contracts: re-emit unchanged ones VERBATIM
       - prior_art                    # reuse-first: existing APIs (other features) + design idioms
+      - bsc_skill                    # the signature discipline, served — not hoped for
     outcomes:
       SPEC: spec_questions
       QUESTIONS: spec_questions
@@ -187,6 +188,7 @@ steps:
       - design_breaks                # WHY it is broken (caller/callee/param/reason)
       - broken_contracts             # the affected contracts' full IR (incl. calls)
       - design_choice                # the overall design the repair must respect
+      - bsc_skill                    # the signature discipline, served — not hoped for
     outcomes:
       SPEC: merge_fix
       QUESTIONS: repair_questions

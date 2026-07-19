@@ -578,3 +578,19 @@ def _broken_contracts(env, task, spec):
                 affected.add(b[k])
     return [c for c in (full.get("contracts") or [])
             if c.get("contract_key") in affected]
+
+
+@context_provider("bsc_skill")
+def _bsc_skill(env, task, spec):
+    """The distilled BSC signature skill (prompts/bsc_signatures.md) —
+    served DETERMINISTICALLY into every design-phase agent. Plugin skills
+    are model-invoked and therefore optional; this channel is not. One
+    file, one source of truth, same rules design_check enforces."""
+    from pathlib import Path
+    root = getattr(env.pack, "root", None) if env.pack else None
+    if not root:
+        return None
+    f = Path(root) / "prompts" / "bsc_signatures.md"
+    if not f.is_file():
+        return None
+    return f.read_text(errors="replace")[:12000]

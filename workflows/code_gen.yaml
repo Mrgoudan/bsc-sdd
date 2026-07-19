@@ -38,6 +38,7 @@ steps:
     context:
       - payload
       - spec_slice                   # all the module's contracts (signatures)
+      - bsc_skill                    # the signature discipline, served — not hoped for
       - compile_feedback             # on a preflight red: the compiler's errors
     outcomes:
       SKELETON: write_skeleton
