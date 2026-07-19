@@ -14,13 +14,19 @@ set -euo pipefail
 
 WORKTREE="$1"; SMOKE="$2"; CLANG="$3"; LIBCBS="$4"; shift 4
 
-CBS="$(ls "$WORKTREE"/src/*.cbs 2>/dev/null | head -1)"
-[ -n "$CBS" ] || { echo "no generated .cbs under $WORKTREE/src"; exit 1; }
+# module sources: ANY .cbs in the worktree except test files and build dirs
+# (never assume a src/ layout — the module path is the spec's business)
+MODS=()
+while IFS= read -r f; do MODS+=("$f"); done < <(
+    find "$WORKTREE" -name "*.cbs" \
+         -not -path "*/tests/*" -not -path "*/.smoke/*" -not -path "*/.git/*" \
+         | sort)
+[ "${#MODS[@]}" -gt 0 ] || { echo "no generated .cbs under $WORKTREE"; exit 1; }
 [ -f "$SMOKE" ] || { echo "smoke test $SMOKE missing (required)"; exit 1; }
 
 INCS=()
 for d in "$LIBCBS"/*/; do INCS+=("-I" "${d%/}"); done
-INCS+=("-I" "$(dirname "$CBS")")          # the generated .hbs lives beside the .cbs
+for f in "${MODS[@]}"; do INCS+=("-I" "$(dirname "$f")"); done  # .hbs beside .cbs
 
 OUT="$WORKTREE/.smoke"
 mkdir -p "$OUT"
@@ -30,7 +36,7 @@ while IFS= read -r f; do IMPLS+=("$f"); done < <(find "$LIBCBS" -name "*.cbs" | 
 
 run_suite() {  # <label> <test.cbs>
     "$CLANG" -Wno-nullability-completeness "${INCS[@]}" \
-        "$CBS" "$2" "${IMPLS[@]}" \
+        "${MODS[@]}" "$2" "${IMPLS[@]}" \
         -lpthread -lm \
         -o "$OUT/$1_bin"
     "$OUT/$1_bin"
