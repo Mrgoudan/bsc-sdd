@@ -27,6 +27,20 @@ if [ "${1:-}" = "coverage" ]; then
   exec python3 "$PACK_DIR/scripts/confirm_coverage.py" \
        --db "$FF_ROOT/state/forgeflow.db" --feature "${1:?feature key required}"
 fi
+# status: where is a feature in the pipeline right now (offline, read-only)
+if [ "${1:-}" = "status" ]; then
+  shift
+  exec python3 - "$FF_ROOT/state/forgeflow.db" "${1:?feature key required}" <<'PY'
+import sqlite3, sys
+c=sqlite3.connect(sys.argv[1]); c.row_factory=sqlite3.Row
+fk=sys.argv[2]
+for t in c.execute("SELECT id,kind,state FROM tasks WHERE json_extract(payload,'$.feature_key')=? ORDER BY id",(fk,)):
+    last=c.execute("SELECT step,outcome FROM task_steps WHERE task_id=? ORDER BY rowid DESC LIMIT 1",(t["id"],)).fetchone()
+    print("  task %d  %-9s %-9s  @ %s"%(t["id"],t["kind"],t["state"], "%s/%s"%(last["step"],last["outcome"]) if last else "-"))
+st=c.execute("SELECT status,count(*) n FROM codegen_units WHERE feature_key=? GROUP BY status",(fk,)).fetchall()
+if st: print("  functions:", ", ".join("%d %s"%(r["n"],r["status"]) for r in st))
+PY
+fi
 
 if [ ! -f "$SECRETS" ]; then
   echo "missing $SECRETS — create it (chmod 600) with ANTHROPIC_BASE_URL/AUTH_TOKEN" >&2
@@ -61,6 +75,17 @@ fi
 #   ./run-bsc-sdd.sh questions              # what is the pipeline waiting on?
 #   ./run-bsc-sdd.sh answer Q-1=replace     # answer + auto-resume
 #   ./run-bsc-sdd.sh answer --accept-defaults
+# start a feature FROM ITS CONFIG FILE (projects/<FEATURE>/feature.yaml):
+#   ./run-bsc-sdd.sh start CC-RUN          # emit spec.requested from the config
+#   ./run-bsc-sdd.sh start CC-RUN --dry    # show the payload, don't emit
+#   ./run-bsc-sdd.sh start CC-RUN --drive  # + run the one-shot loop (no daemon)
+if [ "${1:-}" = "start" ]; then
+  shift
+  FEAT="${1:?feature key required}"; shift || true
+  exec python3 "$PACK_DIR/scripts/start_feature.py" \
+       --db "$FF_ROOT/state/forgeflow.db" --projects ~/bsd/bsc-sdd-projects \
+       --feature "$FEAT" "$@"
+fi
 if [ "${1:-}" = "questions" ]; then
   shift
   exec python3 "$PACK_DIR/scripts/answer.py" --db "$FF_ROOT/state/forgeflow.db" "$@"
