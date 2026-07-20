@@ -9,7 +9,7 @@
 #              see, checked over the STRUCTURED assertion slot (Z3-swappable).
 workflow: code_gen
 consumes: [spec.validated]
-emits: [sdd.completed, sdd.blocked]
+emits: [sdd.completed, sdd.blocked, spec.requested]
 
 steps:
   - name: plan_modules                       # units = modules (functions in a module
@@ -145,6 +145,7 @@ steps:
       - fix_hints: { k: 2 }          # on a retry: past (same error -> fixed body) lessons
       - current_body                 # on a behavior repair: the body being fixed
       - behavior_findings            # on a behavior repair: WHICH promises broke, and how
+      - behavior_hint                # human-approved retry: the hint from the gate
       - select:                      # the most similar already-GREEN function, via
           corpus: green_bodies       # the ENGINE cascade (embeddings cached; flip
           query: "{prev.summary} {prev.signature}"   # to a pinned model in config)
@@ -202,8 +203,8 @@ steps:
       - assertions                   # this spec's behavior pre/post (text+formal)
     outcomes:
       PASS: conformance_check
-      FAIL: behavior_repend          # violated assertions NAME their functions:
-      agent_limit: parked            # scoped repair, then every verifier re-runs
+      FAIL: behavior_triage          # bounded scoped repair, then escalate to a human
+      agent_limit: parked
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
@@ -244,11 +245,35 @@ steps:
       data: { feature_key: "{payload.feature_key}" }
     outcomes: { ok: done }
 
-  - name: behavior_repend            # the behavior gate's scoped repair: violated
-    block: codegen.behavior_repend   # assertions name their contracts — re-pend
-    max_visits: 3                    # exactly those and re-enter the loop (the
-    timeout_s: 30                    # regen sees current_body + behavior_findings);
-    outcomes: { repend: next_function, none: blocked }  # spec-level finding -> human
+  - name: behavior_triage            # bounded body-repair, then ESCALATE: a
+    block: codegen.behavior_triage   # contract under the cap gets one more scoped
+    max_visits: 6                    # regen (current_body + behavior_findings); a
+    timeout_s: 30                    # contract STILL violating past the cap stops
+    params: { cap: 1 }               # guessing and goes to a human.
+    outcomes: { repend: next_function, escalate: behavior_gate, none: blocked }
+
+  - name: behavior_gate              # THE HUMAN GATE for stuck behavior: replan the
+    block: human.ask                 # design, hint the body, or abandon. Persistent
+    max_visits: 6                    # behavior failure is not silently re-guessed.
+    timeout_s: 30
+    params: { key: "{payload.feature_key}/behavior" }
+    outcomes:
+      picked: behavior_escalate      # "Replan the design" -> back to plan
+      revise: behavior_reset         # "Retry the body with a hint" (comment)
+      reframe: behavior_reset
+      abandon: blocked
+      awaiting_human: parked
+
+  - name: behavior_reset             # human gave a hint: re-pend stuck units,
+    block: codegen.behavior_reset    # clear counters (fresh cap), loop with the
+    max_visits: 6                    # hint served via behavior_hint.
+    timeout_s: 30
+    outcomes: { ok: next_function, none: blocked }
+
+  - name: behavior_escalate          # human chose replan: hand persistent
+    block: codegen.behavior_escalate # violations back to plan (spec.requested +
+    timeout_s: 30                    # behavior_design_feedback); the delta re-runs.
+    outcomes: { ok: done, missing: blocked }
 
   - name: retry_gate                 # bump this function's attempt count; regenerate
     block: codegen.retry_gate        # ('retry') or give up ('giveup') past `cap`.

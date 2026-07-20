@@ -24,6 +24,8 @@ MIGRATIONS = [
      "ALTER TABLE codegen_units ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"),
     ("codegen_units", "last_error",
      "ALTER TABLE codegen_units ADD COLUMN last_error TEXT"),
+    ("codegen_units", "behavior_repairs",
+     "ALTER TABLE codegen_units ADD COLUMN behavior_repairs INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

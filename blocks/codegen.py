@@ -430,28 +430,144 @@ def codegen_write_tests(ctx, task, prev):
     return "ok", {"written": [str(root / TESTS_CBS)], "scenarios": len(scenarios)}
 
 
-@block("codegen.behavior_repend", "state", {"repend", "none"})
-def codegen_behavior_repend(ctx, task, prev):
-    """The behavior gate's scoped repair: violated assertions NAME their
-    contracts — re-pend exactly those units (fresh compile budget, old body
-    kept in the DB until the regen replaces it, so the repair agent sees
-    what it is fixing via current_body + behavior_findings). The loop then
-    regenerates only the guilty functions and every verifier re-runs.
-    'none' = no violation names a contract (a spec-level finding): that is
-    a human conversation, not a regen."""
+def _behavior_gate_context(conn, task, stuck):
+    """Human-readable situation for the behavior gate: each stuck contract
+    with the assertions its code kept violating."""
+    import json as _json
+    row = conn.execute(
+        "SELECT result FROM task_steps WHERE task_id=? AND"
+        " step='behavior_check' ORDER BY rowid DESC LIMIT 1",
+        (task["id"],)).fetchone()
+    res = _json.loads(row["result"] or "{}") if row else {}
+    lines = []
+    for ck in stuck:
+        lines.append("**%s** — violated:" % ck)
+        for x in res.get("results") or []:
+            if isinstance(x, dict) and x.get("contract_key") == ck \
+                    and str(x.get("status", "")).lower() == "violated":
+                lines.append("- %s" % (x.get("assertion") or ""))
+                if x.get("evidence"):
+                    lines.append("  - _why:_ %s" % str(x["evidence"])[:300])
+    return "\n".join(lines)
+
+
+@block("codegen.behavior_triage", "state", {"repend", "escalate", "none"},
+       required_params={"cap"})
+def codegen_behavior_triage(ctx, task, prev):
+    """The behavior gate's bounded repair — with an ESCALATION.
+
+    Violated assertions NAME their contracts. A contract that has been
+    body-repaired FEWER than `cap` times gets one more scoped regen
+    (re-pend, +1 to behavior_repairs; the loop feeds current_body +
+    behavior_findings). A contract that has ALREADY hit the cap and still
+    violates is no longer treated as a body bug: further guessing is
+    presumed a DESIGN fault (or a body too hard to land blind), so we
+    STOP and route to a human — 'escalate'. 'none' = a violation naming no
+    contract (a spec-level finding): also a human conversation."""
     conn = ctx["_conn"]
     fk = _fk(task)
-    guilty = []
-    for r in (prev or {}).get("results") or []:
-        if isinstance(r, dict) \
-                and str(r.get("status", "")).lower() == "violated" \
-                and r.get("contract_key"):
-            guilty.append(r["contract_key"])
-    guilty = sorted(set(guilty))
+    cap = int(ctx["cap"])
+    guilty = sorted({r["contract_key"] for r in (prev or {}).get("results") or []
+                     if isinstance(r, dict)
+                     and str(r.get("status", "")).lower() == "violated"
+                     and r.get("contract_key")})
     if not guilty:
         return "none", {}
+    counts = {ck: n for ck, n in conn.execute(
+        "SELECT contract_key, behavior_repairs FROM codegen_units"
+        " WHERE feature_key=? AND contract_key IN (%s)"
+        % ",".join("?" * len(guilty)), [fk] + guilty)}
+    stuck = [ck for ck in guilty if counts.get(ck, 0) >= cap]
+    if stuck:
+        decision = {
+            "title": "Behavior repair stuck on %s" % ", ".join(stuck),
+            "kind": "proposal",
+            "body": "The behavior tier keeps failing these functions after "
+                    "%d body-repair round(s). Automated guessing stops here." % cap,
+            "context": _behavior_gate_context(conn, task, stuck),
+            "recommended": "Replan the design",
+            "options": [
+                {"title": "Replan the design",
+                 "summary": "Hand the persistent violations back to the "
+                            "planner; the contract(s) are restructured around "
+                            "what the code could not satisfy. Pick this if the "
+                            "interface itself makes the promise hard to keep.",
+                 "pros": ["fixes root cause", "only the delta re-runs"],
+                 "cons": ["re-authors the affected contracts"]},
+                {"title": "Retry the body with a hint",
+                 "summary": "Re-attempt the SAME contract; put your guidance "
+                            "in the comment below (e.g. 'use O_TMPFILE, unlink "
+                            "AFTER cc writes'). Pick this if the design is fine "
+                            "and the model just needs a nudge.",
+                 "pros": ["cheap", "keeps the design"],
+                 "cons": ["may still miss without a good hint"]},
+                {"title": "Abandon",
+                 "summary": "Stop; leave the feature blocked."},
+            ]}
+        return "escalate", {"stuck": stuck, "guilty": guilty,
+                            "decision": decision}
     marks = ",".join("?" * len(guilty))
     conn.execute("UPDATE codegen_units SET status='pending', attempts=0,"
-                 " last_error=NULL WHERE feature_key=? AND contract_key IN"
-                 " (%s)" % marks, [fk] + guilty)
+                 " last_error=NULL, behavior_repairs = behavior_repairs + 1"
+                 " WHERE feature_key=? AND contract_key IN (%s)" % marks,
+                 [fk] + guilty)
     return "repend", {"repended": guilty, "count": len(guilty)}
+
+
+@block("codegen.behavior_reset", "state", {"ok", "none"})
+def codegen_behavior_reset(ctx, task, prev):
+    """Human said 'retry the body with a hint' (a revise verdict on the
+    behavior gate). Re-pend the stuck contracts and CLEAR their repair
+    counters so the hint gets a fresh cap of attempts; the hint itself
+    rides in the decision comment (served by the behavior_hint provider)."""
+    conn = ctx["_conn"]
+    fk = _fk(task)
+    stuck = (prev or {}).get("answer", {})
+    # the gate's result carries the decision; re-pend whatever is not done
+    rows = [ck for (ck,) in conn.execute(
+        "SELECT contract_key FROM codegen_units WHERE feature_key=?"
+        " AND status!='done'", (fk,))]
+    if not rows:
+        rows = [ck for (ck,) in conn.execute(
+            "SELECT contract_key FROM codegen_units WHERE feature_key=?"
+            " AND behavior_repairs > 0", (fk,))]
+    if not rows:
+        return "none", {}
+    marks = ",".join("?" * len(rows))
+    conn.execute("UPDATE codegen_units SET status='pending', attempts=0,"
+                 " last_error=NULL, behavior_repairs=0 WHERE feature_key=?"
+                 " AND contract_key IN (%s)" % marks, [fk] + rows)
+    return "ok", {"reset": rows}
+
+
+@block("codegen.behavior_escalate", "state", {"ok", "missing"})
+def codegen_behavior_escalate(ctx, task, prev):
+    """Human said 'replan the design' — the persistent behavior violations
+    are handed back to PLAN. Re-emit spec.requested with the stored
+    requirement plus behavior_design_feedback (the stuck contracts + their
+    violated assertions), so write_spec/fix_joins restructures the design
+    around what the code could not be made to satisfy. Same mechanism as a
+    function-edit escalation; only the delta re-runs."""
+    import json as _json
+    import time
+    conn = ctx["_conn"]
+    fk = _fk(task)
+    r = conn.execute("SELECT requirement FROM specs WHERE feature_key=?",
+                     (fk,)).fetchone()
+    if not r:
+        return "missing", {"error": "no spec for '%s'" % fk}
+    row = conn.execute(
+        "SELECT result FROM task_steps WHERE task_id=? AND"
+        " step='behavior_check' ORDER BY rowid DESC LIMIT 1",
+        (task["id"],)).fetchone()
+    findings = []
+    for x in (_json.loads(row["result"] or "{}").get("results") if row else []) or []:
+        if isinstance(x, dict) and str(x.get("status", "")).lower() == "violated":
+            findings.append({"contract_key": x.get("contract_key"),
+                             "assertion": x.get("assertion"),
+                             "evidence": x.get("evidence")})
+    data = {"feature_key": fk, "requirement": r[0],
+            "base": (task.get("payload") or {}).get("base") or "main",
+            "behavior_design_feedback": findings, "_force": time.time_ns()}
+    return "ok", {"_staged": [{"op": "emit_event", "name": "spec.requested",
+                               "payload": data}], "findings": len(findings)}

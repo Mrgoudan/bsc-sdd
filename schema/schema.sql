@@ -151,6 +151,7 @@ CREATE TABLE IF NOT EXISTS codegen_units (
     seq           INTEGER NOT NULL,
     status        TEXT NOT NULL DEFAULT 'pending', -- pending | active | done
     attempts      INTEGER NOT NULL DEFAULT 0,      -- per-function regenerate count
+    behavior_repairs INTEGER NOT NULL DEFAULT 0,  -- behavior-tier repair rounds (escalate past cap)
     body          TEXT,
     last_error    TEXT,                            -- last red compile's stderr (fix-lesson capture)
     UNIQUE (feature_key, module, contract_key)

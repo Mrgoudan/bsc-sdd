@@ -125,6 +125,7 @@ steps:
       - current_spec                 # existing contracts: re-emit unchanged ones VERBATIM
       - prior_art                    # reuse-first: existing APIs (other features) + design idioms
       - bsc_skill                    # the signature discipline, served — not hoped for
+      - behavior_design_feedback     # if code_gen bounced back: assertions the code could not satisfy
     outcomes:
       SPEC: spec_questions
       QUESTIONS: spec_questions
@@ -189,6 +190,7 @@ steps:
       - broken_contracts             # the affected contracts' full IR (incl. calls)
       - design_choice                # the overall design the repair must respect
       - bsc_skill                    # the signature discipline, served — not hoped for
+      - behavior_design_feedback     # persistent behavior violations to design around
     outcomes:
       SPEC: merge_fix
       QUESTIONS: repair_questions

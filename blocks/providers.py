@@ -636,3 +636,31 @@ def _behavior_findings(env, task, spec):
         return None
     return {"contract_key": u["contract_key"], "violated": mine,
             "also_being_fixed": sorted(others)}
+
+
+@context_provider("behavior_hint")
+def _behavior_hint(env, task, spec):
+    """On a body-retry the human approved with a hint (behavior gate,
+    revise verdict): the human's comment, served to the regen so the fix
+    attempt uses it. Latest resolved behavior-gate round for this feature."""
+    import json as _json
+    fk = _feature_key(task)
+    if not fk:
+        return None
+    r = env.conn.execute(
+        "SELECT answer FROM decisions WHERE key=? AND status='resolved'"
+        " ORDER BY round DESC LIMIT 1", ("%s/behavior" % fk,)).fetchone()
+    if not r:
+        return None
+    comment = (_json.loads(r["answer"] or "{}")).get("comment")
+    return {"hint": comment} if comment else None
+
+
+@context_provider("behavior_design_feedback")
+def _behavior_design_feedback(env, task, spec):
+    """On a design replan triggered by persistent behavior failures: the
+    stuck contracts and the assertions their code could never satisfy —
+    served to write_spec/fix_joins so the RESTRUCTURE addresses them
+    (payload.behavior_design_feedback, set by behavior_escalate)."""
+    fb = (task.get("payload") or {}).get("behavior_design_feedback")
+    return fb or None
