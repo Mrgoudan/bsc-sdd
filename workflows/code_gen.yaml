@@ -122,16 +122,17 @@ steps:
     outcomes: { green: gen_module, red: gen_tests, error: blocked,
                 timeout: parked }
 
-  # --- WHOLE-MODULE generation: every body in ONE coherent agent call, so
-  #     caller/callee wiring stays consistent (the per-function loop generated
-  #     each body blind to its siblings, which produced integration bugs). A
-  #     compile red or a behavior FAIL re-enters gen_module with the whole
-  #     picture + the feedback; capped, then it parks. ---
-  - name: gen_module                 # ALL function bodies at once
+  # --- AGENT-PACED generation: the agent sees the whole module and decides
+  #     itself how much to implement per turn and WHEN to request the compile
+  #     gate (READY) vs take another turn (CONTINUE). Coherence comes from
+  #     whole-module visibility; the compile stays an EXTERNAL sound gate the
+  #     agent can ask for but never rubber-stamps. Compile red / behavior FAIL
+  #     re-enter here with the feedback; capped, then park. ---
+  - name: gen_module                 # the agent decides the chunk + when to compile
     block: agent.run
     llm: genmodule
     schema: module_result
-    max_visits: 12                   # compile-red + behavior-repair loops, capped
+    max_visits: 30                   # agent-paced continue + compile-red + behavior loops
     params: { max_context_bytes: "{pack.max_context_bytes}" }
     timeout_s: 1800
     context:
@@ -145,18 +146,19 @@ steps:
       - behavior_hint                # human-approved retry: the hint from the gate
       - fix_hints: { k: 3 }          # past (error -> fixed body) lessons
     outcomes:
-      MODULE: write_module
+      READY: write_module            # agent asked for the compile gate
+      CONTINUE: write_module         # agent wants another turn
       EMPTY: blocked
       agent_limit: parked
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
 
-  - name: write_module               # store every body; rebuild each .cbs
-    block: codegen.write_module
-    max_visits: 12
+  - name: write_module               # store this turn's bodies; route on the
+    block: codegen.write_module      # agent's verdict: READY -> compile,
+    max_visits: 30                   # CONTINUE -> another gen turn.
     timeout_s: 60
-    outcomes: { ok: compile, empty: blocked }
+    outcomes: { compile: compile, continue: gen_module, empty: blocked }
 
   - name: compile                    # THE SOUND GATE over the WHOLE module: BSC
     block: verify.compile            # ownership/null/init/borrow, in every

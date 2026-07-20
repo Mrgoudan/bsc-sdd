@@ -1,15 +1,18 @@
-# The whole-module codegen agent's output: EVERY function body of the module
-# in one call, so cross-function wiring stays coherent (no per-function
-# blindness). verdict enum values become routable outcomes.
+# The codegen agent's output. The AGENT decides two things itself:
+#  1. how much to implement this turn (one function, several, or all), and
+#  2. whether it is ready to compile (READY) or wants another turn (CONTINUE).
+# The compile remains an EXTERNAL sound gate — the agent controls generation
+# pace and when to REQUEST verification, never the verdict.
 type: object
 required: [verdict]
 properties:
-  verdict: { enum: [MODULE, EMPTY] }
+  verdict: { enum: [READY, CONTINUE, EMPTY] }
   functions:
-    type: array
+    type: array                     # the bodies produced/updated THIS turn
     items:
       type: object
       required: [contract_key, body]
       properties:
-        contract_key: { type: string }   # which contract this body implements
-        body:         { type: string }   # the complete function definition
+        contract_key: { type: string }
+        body:         { type: string }
+  note: { type: string }            # optional: what's done, what's left

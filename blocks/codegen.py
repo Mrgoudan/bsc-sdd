@@ -582,15 +582,19 @@ def codegen_behavior_escalate(ctx, task, prev):
 # stores all bodies at once and rebuilds the .cbs; compile/behavior regens
 # re-enter gen_module with the whole picture.
 
-@block("codegen.write_module", "state", {"ok", "empty"})
+@block("codegen.write_module", "state", {"compile", "continue", "empty"})
 def codegen_write_module(ctx, task, prev):
-    """Store every generated body (from the module agent) and rebuild each
-    module's .cbs. All units go to 'done'; a regen REPLACES bodies in place.
-    Returns `written` (the .cbs paths) for the compile gate."""
+    """Store the bodies the agent produced this turn and rebuild each .cbs,
+    then route on the AGENT'S choice: verdict READY -> 'compile' (it asked
+    for verification), CONTINUE -> 'continue' (it wants another turn). The
+    agent controls generation pace and when to request the compile gate;
+    the gate's verdict is still the engine's. A CONTINUE with nothing left
+    unimplemented is treated as READY (don't loop forever)."""
     conn = ctx["_conn"]
     fk = _fk(task)
+    verdict = (prev or {}).get("verdict")
     funcs = (prev or {}).get("functions") or []
-    if not funcs:
+    if not funcs and verdict != "CONTINUE":
         return "empty", {}
     stored = 0
     for f in funcs:
@@ -612,5 +616,12 @@ def codegen_write_module(ctx, task, prev):
         written.append(str(root / cbs_path))
     if not written:
         return "empty", {}
-    return "ok", {"written": written, "stored": stored,
-                  "functions": len(funcs)}
+    # how many functions still have no body — if none, force compile even on
+    # a CONTINUE (the agent is done whether it said so or not).
+    pending = conn.execute(
+        "SELECT count(*) FROM codegen_units WHERE feature_key=? AND body IS NULL",
+        (fk,)).fetchone()[0]
+    route = "compile" if (verdict == "READY" or pending == 0) else "continue"
+    return route, {"written": written, "stored": stored,
+                   "functions": len(funcs), "pending": pending,
+                   "note": (prev or {}).get("note")}
