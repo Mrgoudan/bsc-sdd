@@ -15,6 +15,19 @@ SECRETS="${FORGEFLOW_SECRETS:-$PACK_DIR/config/secrets.env}"
 FF_ROOT="${FF_ROOT:-$PACK_DIR/run}"
 mkdir -p "$FF_ROOT"                    # paths.data_root anchor must exist at load
 
+# read-only, offline subcommands — no secrets/agents needed, so they run
+# before the secrets gate:
+#   ./run-bsc-sdd.sh verify   <FEATURE>   # rehydrate + compile + run smoke
+#   ./run-bsc-sdd.sh coverage <FEATURE>   # requirement -> code totality gate
+if [ "${1:-}" = "verify" ]; then
+  shift; exec "$PACK_DIR/scripts/demo_verify.sh" "$@"
+fi
+if [ "${1:-}" = "coverage" ]; then
+  shift
+  exec python3 "$PACK_DIR/scripts/confirm_coverage.py" \
+       --db "$FF_ROOT/state/forgeflow.db" --feature "${1:?feature key required}"
+fi
+
 if [ ! -f "$SECRETS" ]; then
   echo "missing $SECRETS — create it (chmod 600) with ANTHROPIC_BASE_URL/AUTH_TOKEN" >&2
   exit 1
