@@ -6,3 +6,4 @@ config/secrets.env
 # python
 __pycache__/
 *.pyc
+sdd_run_out/
