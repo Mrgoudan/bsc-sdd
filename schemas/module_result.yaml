@@ -1,0 +1,15 @@
+# The whole-module codegen agent's output: EVERY function body of the module
+# in one call, so cross-function wiring stays coherent (no per-function
+# blindness). verdict enum values become routable outcomes.
+type: object
+required: [verdict]
+properties:
+  verdict: { enum: [MODULE, EMPTY] }
+  functions:
+    type: array
+    items:
+      type: object
+      required: [contract_key, body]
+      properties:
+        contract_key: { type: string }   # which contract this body implements
+        body:         { type: string }   # the complete function definition

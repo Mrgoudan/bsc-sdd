@@ -571,3 +571,46 @@ def codegen_behavior_escalate(ctx, task, prev):
             "behavior_design_feedback": findings, "_force": time.time_ns()}
     return "ok", {"_staged": [{"op": "emit_event", "name": "spec.requested",
                                "payload": data}], "findings": len(findings)}
+
+
+# ------------------------------------------------ whole-module generation
+#
+# One agent call emits EVERY function body of the module together, so
+# cross-function wiring stays coherent (the per-function loop generated each
+# body blind to its siblings' bodies, which produced integration bugs like a
+# caller double-compiling a source the callee already handled). write_module
+# stores all bodies at once and rebuilds the .cbs; compile/behavior regens
+# re-enter gen_module with the whole picture.
+
+@block("codegen.write_module", "state", {"ok", "empty"})
+def codegen_write_module(ctx, task, prev):
+    """Store every generated body (from the module agent) and rebuild each
+    module's .cbs. All units go to 'done'; a regen REPLACES bodies in place.
+    Returns `written` (the .cbs paths) for the compile gate."""
+    conn = ctx["_conn"]
+    fk = _fk(task)
+    funcs = (prev or {}).get("functions") or []
+    if not funcs:
+        return "empty", {}
+    stored = 0
+    for f in funcs:
+        ck, body = f.get("contract_key"), f.get("body")
+        if not ck or not body:
+            continue
+        n = conn.execute(
+            "UPDATE codegen_units SET body=?, status='done', attempts=0,"
+            " last_error=NULL WHERE feature_key=? AND contract_key=?",
+            (body, fk, ck)).rowcount
+        stored += n
+    # rebuild every module's .cbs from the stored bodies
+    root = _worktree(ctx, task)
+    written = []
+    for module, cbs_path, cbs_head in conn.execute(
+            "SELECT module, cbs_path, cbs_head FROM codegen_modules"
+            " WHERE feature_key=? AND module != ?", (fk, TESTS_MODULE)):
+        _rebuild_cbs(conn, fk, module, root, cbs_path, cbs_head)
+        written.append(str(root / cbs_path))
+    if not written:
+        return "empty", {}
+    return "ok", {"written": written, "stored": stored,
+                  "functions": len(funcs)}

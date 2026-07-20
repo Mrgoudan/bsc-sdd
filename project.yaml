@@ -201,6 +201,7 @@ prompts:
   author:  prompts/author.md      # requirements -> spec IR (with fulfills trace)
   skeleton: prompts/skeleton.md   # module interface (.hbs + .cbs head), once
   genfn:   prompts/genfn.md       # ONE function body against the skeleton
+  genmodule: prompts/genmodule.md # WHOLE module — every body in one coherent call
   behavior: prompts/behavior.md   # LLM behavior-logic check over structured assertions
   conform: prompts/conformance.md # impl -> req conformance (the outer envelope)
   fnedit:  prompts/fnedit.md      # surgical single-function edit (or INTERFACE verdict)
@@ -214,6 +215,7 @@ schemas:
   spec_result:      schemas/spec_result.yaml
   skeleton_result:  schemas/skeleton_result.yaml
   function_result:  schemas/function_result.yaml
+  module_result:    schemas/module_result.yaml
   behavior_verdict: schemas/behavior_verdict.yaml
   conformance_result: schemas/conformance_result.yaml
   fnedit_result:    schemas/fnedit_result.yaml
@@ -233,6 +235,8 @@ agents:
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   genfn:    { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
+  genmodule: { backend: claude-cli, model: GLM-5.2,
+               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   behavior: { backend: claude-cli, model: GLM-5.2,
               env_keys: [ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN] }
   conform:  { backend: claude-cli, model: GLM-5.2,

@@ -82,7 +82,7 @@ steps:
   - name: need_tests                 # payload.tdd truthy -> write the tests
     block: codegen.need_tests        # first; else straight to codegen.
     timeout_s: 10
-    outcomes: { gen: gen_tests, skip: next_function }
+    outcomes: { gen: gen_tests, skip: gen_module }
 
   - name: gen_tests                  # implementation-blind by construction:
     block: agent.run                 # only the frozen interface + the spec's
@@ -119,71 +119,58 @@ steps:
     max_visits: 8                    # RUN yet; that is smoke_test, after the
     timeout_s: 600                   # bodies exist. Red-first, honestly.)
     params: { cmd: "{pack.compile_cmd}", repo: "{paths.repo}" }
-    outcomes: { green: next_function, red: gen_tests, error: blocked,
+    outcomes: { green: gen_module, red: gen_tests, error: blocked,
                 timeout: parked }
 
-  # --- the per-function loop: gen one function, compile it, next (or regenerate) ---
-  - name: next_function                    # cursor: next pending function -> active,
-    block: codegen.next_fn           # or 'done' once every function is green.
-    max_visits: 400                  # visited ~once per function (+ loop-backs)
-    timeout_s: 30
-    outcomes: { next: gen_function, done: smoke_test }
-
-  - name: gen_function                     # ONE function body against the frozen
-    block: agent.run                 # skeleton — small context (no whole-file
-    llm: genfn                       # timeout); a red localizes to this function.
-    schema: function_result
-    max_visits: 400
+  # --- WHOLE-MODULE generation: every body in ONE coherent agent call, so
+  #     caller/callee wiring stays consistent (the per-function loop generated
+  #     each body blind to its siblings, which produced integration bugs). A
+  #     compile red or a behavior FAIL re-enters gen_module with the whole
+  #     picture + the feedback; capped, then it parks. ---
+  - name: gen_module                 # ALL function bodies at once
+    block: agent.run
+    llm: genmodule
+    schema: module_result
+    max_visits: 12                   # compile-red + behavior-repair loops, capped
     params: { max_context_bytes: "{pack.max_context_bytes}" }
     timeout_s: 1800
     context:
       - payload
-      - skeleton                     # the frozen .hbs interface to code against
-      - active_contract              # this ONE function: signature + assertions
-      - compile_feedback             # on a retry: the compiler's errors to fix
-      - similar: { k: 2 }            # idioms for THIS function (IDF-ranked)
-      - fix_hints: { k: 2 }          # on a retry: past (same error -> fixed body) lessons
-      - current_body                 # on a behavior repair: the body being fixed
-      - behavior_findings            # on a behavior repair: WHICH promises broke, and how
+      - skeleton                     # frozen .hbs — signatures verbatim
+      - module_contracts             # EVERY contract: sig + assertions
+      - bsc_skill                    # borrow/ownership discipline, served
+      - module_bodies                # on a regen: last bodies (fix, re-emit rest)
+      - compile_feedback             # on a compile red: whole-module errors
+      - behavior_findings            # on a behavior regen: violated assertions
       - behavior_hint                # human-approved retry: the hint from the gate
-      - select:                      # the most similar already-GREEN function, via
-          corpus: green_bodies       # the ENGINE cascade (embeddings cached; flip
-          query: "{prev.summary} {prev.signature}"   # to a pinned model in config)
-          filter: { feature_key: "{payload.feature_key}" }
-          k: 1
+      - fix_hints: { k: 3 }          # past (error -> fixed body) lessons
     outcomes:
-      FUNCTION: write_function
+      MODULE: write_module
       EMPTY: blocked
       agent_limit: parked
       agent_backend: parked
       agent_invalid: parked
       timeout: parked
 
-  - name: write_function                   # store the body; rebuild .cbs from all bodies
-    block: codegen.write_fn          # (a regenerate REPLACES, never appends)
-    max_visits: 400
-    timeout_s: 30
+  - name: write_module               # store every body; rebuild each .cbs
+    block: codegen.write_module
+    max_visits: 12
+    timeout_s: 60
     outcomes: { ok: compile, empty: blocked }
 
-  - name: compile                    # THE SOUND GATE, per function: BSC ownership
-    block: verify.compile            # + null + init against the frozen interface.
-    lane: build                      # green => this function is sound; red => a
-    max_visits: 400                  # real defect localized to this function.
+  - name: compile                    # THE SOUND GATE over the WHOLE module: BSC
+    block: verify.compile            # ownership/null/init/borrow, in every
+    lane: build                      # function AND at every call site. red ->
+    max_visits: 12                   # regenerate the module with the errors.
     timeout_s: 600
     params:
       cmd: "{pack.compile_cmd}"
       repo: "{paths.repo}"
     outcomes:
-      green: mark_done
-      red: retry_gate                # per-function-capped regenerate
+      green: smoke_test
+      red: gen_module
       error: blocked
       timeout: parked
-
-  - name: mark_done                  # this function is green -> advance the cursor
-    block: codegen.mark_done
-    max_visits: 400
-    timeout_s: 30
-    outcomes: { ok: next_function }
 
   - name: smoke_test                       # behavior floor: run the target's tests
     block: verify.test
@@ -250,7 +237,7 @@ steps:
     max_visits: 6                    # regen (current_body + behavior_findings); a
     timeout_s: 30                    # contract STILL violating past the cap stops
     params: { cap: 1 }               # guessing and goes to a human.
-    outcomes: { repend: next_function, escalate: behavior_gate, none: blocked }
+    outcomes: { repend: gen_module, escalate: behavior_gate, none: blocked }
 
   - name: behavior_gate              # THE HUMAN GATE for stuck behavior: replan the
     block: human.ask                 # design, hint the body, or abandon. Persistent
@@ -268,19 +255,12 @@ steps:
     block: codegen.behavior_reset    # clear counters (fresh cap), loop with the
     max_visits: 6                    # hint served via behavior_hint.
     timeout_s: 30
-    outcomes: { ok: next_function, none: blocked }
+    outcomes: { ok: gen_module, none: blocked }
 
   - name: behavior_escalate          # human chose replan: hand persistent
     block: codegen.behavior_escalate # violations back to plan (spec.requested +
     timeout_s: 30                    # behavior_design_feedback); the delta re-runs.
     outcomes: { ok: done, missing: blocked }
-
-  - name: retry_gate                 # bump this function's attempt count; regenerate
-    block: codegen.retry_gate        # ('retry') or give up ('giveup') past `cap`.
-    max_visits: 400
-    params: { cap: 3 }
-    timeout_s: 10
-    outcomes: { retry: gen_function, giveup: blocked }
 
   - name: blocked                    # dead-end marker: emit a signal a human /
     block: event.emit                # a later fix loop can pick up.

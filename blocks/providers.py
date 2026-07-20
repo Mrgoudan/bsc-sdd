@@ -603,17 +603,12 @@ def _bsc_skill(env, task, spec):
 
 @context_provider("behavior_findings")
 def _behavior_findings(env, task, spec):
-    """On a behavior-repair regen: the violated assertions for the ACTIVE
-    contract (verbatim, with the checker's evidence) plus a one-line list
-    of the other guilty contracts — the function is regenerated to make
-    THESE hold, everything else stays."""
+    """On a behavior REGEN: every violated assertion (whole module), grouped
+    by contract, with the checker's evidence — the module agent regenerates
+    the whole module to make these hold."""
+    import json as _json
     fk = _feature_key(task)
     if not fk:
-        return None
-    u = env.conn.execute(
-        "SELECT contract_key FROM codegen_units WHERE feature_key=?"
-        " AND status='active' LIMIT 1", (fk,)).fetchone()
-    if not u:
         return None
     row = env.conn.execute(
         "SELECT result FROM task_steps WHERE task_id=? AND"
@@ -621,21 +616,16 @@ def _behavior_findings(env, task, spec):
         (task["id"],)).fetchone()
     if not row:
         return None
-    res = json.loads(row["result"] or "{}")
-    mine, others = [], set()
+    res = _json.loads(row["result"] or "{}")
+    by = {}
     for r in res.get("results") or []:
-        if not isinstance(r, dict) \
-                or str(r.get("status", "")).lower() != "violated":
-            continue
-        if r.get("contract_key") == u["contract_key"]:
-            mine.append({"assertion": r.get("assertion"),
-                         "evidence": r.get("evidence")})
-        elif r.get("contract_key"):
-            others.add(r["contract_key"])
-    if not mine and not others:
+        if isinstance(r, dict) and str(r.get("status", "")).lower() == "violated" \
+                and r.get("contract_key"):
+            by.setdefault(r["contract_key"], []).append(
+                {"assertion": r.get("assertion"), "evidence": r.get("evidence")})
+    if not by:
         return None
-    return {"contract_key": u["contract_key"], "violated": mine,
-            "also_being_fixed": sorted(others)}
+    return [{"contract_key": k, "violated": v} for k, v in by.items()]
 
 
 @context_provider("behavior_hint")
@@ -664,3 +654,44 @@ def _behavior_design_feedback(env, task, spec):
     (payload.behavior_design_feedback, set by behavior_escalate)."""
     fb = (task.get("payload") or {}).get("behavior_design_feedback")
     return fb or None
+
+
+@context_provider("module_contracts")
+def _module_contracts(env, task, spec):
+    """Every contract of the feature: signature, summary, behavior
+    assertions, and calls — the whole module served to the whole-module
+    codegen agent so it can keep caller/callee wiring consistent."""
+    import json as _json
+    fk = _feature_key(task)
+    if not fk:
+        return []
+    rows = env.conn.execute(
+        "SELECT c.id, c.contract_key, c.module, c.signature, c.summary"
+        " FROM contracts c JOIN specs s ON s.id = c.spec_id"
+        " WHERE s.feature_key=? AND c.status='active' ORDER BY c.id",
+        (fk,)).fetchall()
+    out = []
+    for r in rows:
+        asserts = [{"kind": a["kind"], "text": a["text"], "formal": a["formal"]}
+                   for a in env.conn.execute(
+            "SELECT kind, text, formal FROM contract_assertions"
+            " WHERE contract_id=? ORDER BY seq", (r["id"],))]
+        out.append({"contract_key": r["contract_key"], "module": r["module"],
+                    "signature": r["signature"], "summary": r["summary"],
+                    "assertions": asserts})
+    return out
+
+
+@context_provider("module_bodies")
+def _module_bodies(env, task, spec):
+    """On a regen: the bodies generated last time, so the agent fixes what
+    the feedback flags and re-emits the rest unchanged."""
+    fk = _feature_key(task)
+    if not fk:
+        return None
+    rows = env.conn.execute(
+        "SELECT contract_key, body FROM codegen_units WHERE feature_key=?"
+        " AND body IS NOT NULL ORDER BY seq", (fk,)).fetchall()
+    if not rows:
+        return None
+    return [{"contract_key": r["contract_key"], "body": r["body"]} for r in rows]
